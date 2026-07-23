@@ -91,7 +91,7 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v9';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v10';
 const LOCAL_ASSETS = [
   './',
   './index.html',
