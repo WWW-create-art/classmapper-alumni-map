@@ -474,6 +474,9 @@
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.js"></script>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="theme-color" content="#1976d2">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1859,6 +1862,22 @@
         });
     </script>
     <script>
+        (function() {
+            try {
+                localStorage.removeItem('classmapper-roster-v1');
+            } catch (error) {}
+
+            if ('caches' in window) {
+                caches.keys()
+                    .then(function(keys) {
+                        return Promise.all(keys
+                            .filter(function(key) { return key.indexOf('classmapper-pwa-') === 0; })
+                            .map(function(key) { return caches.delete(key); }));
+                    })
+                    .catch(function() {});
+            }
+        })();
+
         if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
             (function() {
                 var refreshing = false;
@@ -1878,7 +1897,9 @@
                 }
 
                 window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('./sw.js').then(function(registration) {
+                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(function() {
+                        return navigator.serviceWorker.register('./sw.js');
+                    }).then(function(registration) {
                         activateWaitingWorker(registration);
                         registration.update().catch(function() {});
                         registration.addEventListener('updatefound', function() {
