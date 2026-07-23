@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 
@@ -22,6 +23,7 @@ SCHOOL_ALIASES = {
 def generate_html_template(center, markers, output_path, roster=None, location_lookup=None):
     """生成可查看、可管理、可展开标注的蹭饭地图。"""
     html = HTML_TEMPLATE
+    data_revision = get_data_revision(markers, roster or [], location_lookup or {})
     replacements = {
         "__CENTER__": json.dumps(center),
         "__MARKERS__": json.dumps(markers, ensure_ascii=False),
@@ -31,6 +33,7 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
         "__ADMIN_PASSWORD_SHA256__": json.dumps(ADMIN_PASSWORD_SHA256, ensure_ascii=False),
         "__ADMIN_PASSWORD_LEGACY_HASH__": json.dumps(ADMIN_PASSWORD_LEGACY_HASH, ensure_ascii=False),
         "__GITHUB_PUBLISH_CONFIG__": json.dumps(GITHUB_PUBLISH_CONFIG, ensure_ascii=False),
+        "__DATA_REVISION__": json.dumps(data_revision, ensure_ascii=False),
     }
 
     for placeholder, value in replacements.items():
@@ -41,6 +44,16 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
 
     print(f"✅ 已生成优化版蹭饭地图: {output_path}")
     return output_path
+
+
+def get_data_revision(markers, roster, location_lookup):
+    payload = {
+        "markers": markers,
+        "roster": roster,
+        "locationLookup": location_lookup,
+    }
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 HTML_TEMPLATE = r"""
@@ -824,6 +837,7 @@ HTML_TEMPLATE = r"""
         const ADMIN_PASSWORD_SHA256 = __ADMIN_PASSWORD_SHA256__;
         const ADMIN_PASSWORD_LEGACY_HASH = __ADMIN_PASSWORD_LEGACY_HASH__;
         const GITHUB_PUBLISH_CONFIG = __GITHUB_PUBLISH_CONFIG__;
+        const DATA_REVISION = __DATA_REVISION__;
 
         const mapData = {
             center: __CENTER__,
@@ -868,10 +882,15 @@ HTML_TEMPLATE = r"""
                     return null;
                 }
                 const parsed = JSON.parse(raw);
-                if (!Array.isArray(parsed)) {
+                if (Array.isArray(parsed)) {
+                    localStorage.removeItem(STORAGE_KEY);
                     return null;
                 }
-                return parsed.map((record, index) => hydrateRecord(record, index + 1));
+                if (!parsed || parsed.revision !== DATA_REVISION || !Array.isArray(parsed.records)) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    return null;
+                }
+                return parsed.records.map((record, index) => hydrateRecord(record, index + 1));
             } catch (error) {
                 return null;
             }
@@ -879,7 +898,10 @@ HTML_TEMPLATE = r"""
 
         function writeStoredRoster() {
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(roster));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    revision: DATA_REVISION,
+                    records: roster
+                }));
             } catch (error) {
                 setAdminMessage('浏览器未保存本次修改');
             }

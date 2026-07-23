@@ -23,9 +23,41 @@ HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
 
 BODY_SNIPPET = """    <script>
         if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('./sw.js').catch(function() {});
-            });
+            (function() {
+                var refreshing = false;
+
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                    if (refreshing) {
+                        return;
+                    }
+                    refreshing = true;
+                    window.location.reload();
+                });
+
+                function activateWaitingWorker(registration) {
+                    if (registration && registration.waiting) {
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                }
+
+                window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('./sw.js').then(function(registration) {
+                        activateWaitingWorker(registration);
+                        registration.update().catch(function() {});
+                        registration.addEventListener('updatefound', function() {
+                            var worker = registration.installing;
+                            if (!worker) {
+                                return;
+                            }
+                            worker.addEventListener('statechange', function() {
+                                if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    worker.postMessage({ type: 'SKIP_WAITING' });
+                                }
+                            });
+                        });
+                    }).catch(function() {});
+                });
+            })();
         }
     </script>
 """
@@ -91,7 +123,7 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v12';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v13';
 const LOCAL_ASSETS = [
   './',
   './index.html',
@@ -117,6 +149,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin || event.request.method !== 'GET') {
@@ -124,8 +162,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
+    const freshRequest = new Request(event.request, { cache: 'reload' });
     event.respondWith(
-      fetch(event.request)
+      fetch(freshRequest)
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));

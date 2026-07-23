@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classmapper-pwa-v12';
+const CACHE_NAME = 'classmapper-pwa-v13';
 const LOCAL_ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin || event.request.method !== 'GET') {
@@ -31,8 +37,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
+    const freshRequest = new Request(event.request, { cache: 'reload' });
     event.respondWith(
-      fetch(event.request)
+      fetch(freshRequest)
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
