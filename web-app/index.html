@@ -309,6 +309,17 @@
             grid-template-columns: 1fr 1.4fr;
             gap: 8px;
         }
+        .field-stack {
+            display: grid;
+            gap: 5px;
+        }
+        .privacy-preview {
+            min-height: 15px;
+            padding: 0 2px;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.25;
+        }
         .status-text {
             min-height: 18px;
             font-size: 12px;
@@ -481,10 +492,14 @@
                     <h2>名单管理</h2>
                     <button type="button" id="lockAdminBtn">锁定</button>
                 </div>
+                <p class="status-text">修改会先保存在当前浏览器；要让所有同学都看到，需要导出 CSV 后重新发布。访客姓名会自动按规则隐藏。</p>
                 <form class="record-form" id="recordForm">
                     <input type="hidden" id="editIndexInput">
                     <div class="record-grid">
-                        <input type="text" id="nameInput" placeholder="姓名" autocomplete="off">
+                        <div class="field-stack">
+                            <input type="text" id="nameInput" placeholder="姓名" autocomplete="off">
+                            <span class="privacy-preview" id="namePrivacyPreview">访客显示：-</span>
+                        </div>
                         <input type="text" id="schoolInput" placeholder="学校" list="schoolOptions" autocomplete="off">
                     </div>
                     <datalist id="schoolOptions"></datalist>
@@ -514,11 +529,11 @@
 
     <div id="pwaInstallPanel" class="pwa-install-panel" role="dialog" aria-live="polite" aria-label="全屏打开">
         <span class="pwa-install-panel__copy">
-            <strong class="pwa-install-panel__title">全屏打开</strong>
-            <span class="pwa-install-panel__note" id="pwaInstallNote">点全屏可立即隐藏浏览器栏，安装后从图标进入更像应用。</span>
+            <strong class="pwa-install-panel__title">全屏 / 添加到桌面</strong>
+            <span class="pwa-install-panel__note" id="pwaInstallNote">点全屏可临时隐藏浏览器栏；要出现在桌面，请添加到主屏幕或创建快捷方式。</span>
         </span>
         <span class="pwa-install-panel__actions">
-            <button type="button" id="pwaInstallBtn">安装</button>
+            <button type="button" id="pwaInstallBtn">添加到桌面</button>
             <button type="button" id="pwaFullscreenBtn" class="secondary">全屏</button>
             <button type="button" id="pwaDismissBtn" class="close" aria-label="关闭">×</button>
         </span>
@@ -537,6 +552,7 @@
             var isAndroid = /Android/i.test(navigator.userAgent);
             var restoreTimer = 0;
             var wasScreenLike = false;
+            var shortcutHelpOpen = false;
 
             function isAppMode() {
                 return window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -584,6 +600,16 @@
                 }
             }
 
+            function getShortcutHelpText() {
+                if (isiOS) {
+                    return '在 Safari 里点分享按钮，再选“添加到主屏幕”。';
+                }
+                if (isAndroid) {
+                    return '点浏览器右上角菜单，选择“安装应用”“添加到主屏幕”或“创建快捷方式”。';
+                }
+                return '点浏览器菜单，选择“安装应用”或“创建快捷方式”。';
+            }
+
             function updatePanel(reason) {
                 var restoring = reason === 'restore';
                 if (!panel || isAppMode() || isFullscreenActive() || (!restoring && isInitialPromptDismissed())) {
@@ -601,14 +627,16 @@
 
                 installBtn.style.display = '';
                 fullscreenBtn.style.display = '';
-                installBtn.textContent = '安装';
+                if (!panel.classList.contains('is-visible')) {
+                    shortcutHelpOpen = false;
+                }
+                installBtn.textContent = deferredInstallPrompt ? '添加到桌面' : '创建快捷方式';
                 note.textContent = restoring
-                    ? '刚刚退出了全屏，点一下可以回到全屏。安装后更稳定。'
-                    : '点全屏可立即隐藏浏览器栏，安装后从图标进入更像应用。';
+                    ? '刚刚退出了全屏，点“全屏”可回去；想有桌面图标，请创建快捷方式。'
+                    : '点全屏可临时隐藏浏览器栏；要出现在桌面，请添加到主屏幕或创建快捷方式。';
                 if (isiOS && !deferredInstallPrompt) {
-                    note.textContent = '在 Safari 里点分享，再选“添加到主屏幕”。';
-                    installBtn.textContent = '知道了';
-                } else if (!deferredInstallPrompt) {
+                    note.textContent = getShortcutHelpText();
+                } else if (!deferredInstallPrompt && !isAndroid && !isiOS) {
                     installBtn.style.display = 'none';
                 }
                 if (!canRequestFullscreen()) {
@@ -685,8 +713,14 @@
                             panel.classList.remove('is-visible');
                         });
                     } else {
-                        dismissInitialPrompt();
-                        panel.classList.remove('is-visible');
+                        if (shortcutHelpOpen) {
+                            dismissInitialPrompt();
+                            panel.classList.remove('is-visible');
+                        } else {
+                            shortcutHelpOpen = true;
+                            note.textContent = getShortcutHelpText();
+                            installBtn.textContent = '知道了';
+                        }
                     }
                 });
             }
@@ -806,23 +840,33 @@
             return hasAdminSession();
         }
 
-        function getPrivateStudentName(name) {
+        function getNameMaskChars(text) {
+            const chars = Array.from(text);
+            if (chars.length >= 3 && chars[0] === '木' && chars[1] === '子') {
+                return ['李'].concat(chars.slice(2));
+            }
+            return chars;
+        }
+
+        function getPrivateStudentName(name, forceMasked) {
             const text = String(name || '').trim();
-            if (canShowFullNames()) {
+            if (!forceMasked && canShowFullNames()) {
                 return text;
             }
             if (!text) {
-                return '同学';
-            }
-            const compoundSurnames = ['欧阳', '司马', '上官', '诸葛', '东方', '夏侯', '尉迟', '公孙', '令狐', '宇文', '慕容', '皇甫', '南宫', '司徒', '司空', '申屠', '长孙', '钟离', '第五'];
-            const compound = compoundSurnames.find((surname) => text.startsWith(surname));
-            if (compound) {
-                return compound + '同学';
+                return '';
             }
             if (/^[A-Za-z][A-Za-z\s.'-]*$/.test(text)) {
-                return text.slice(0, 1).toUpperCase() + '同学';
+                return text.slice(0, 1).toUpperCase() + '*';
             }
-            return text.slice(0, 1) + '同学';
+            const chars = getNameMaskChars(text);
+            if (chars.length <= 1) {
+                return text;
+            }
+            if (chars.length === 2) {
+                return chars[0] + '*';
+            }
+            return chars[0] + '*'.repeat(chars.length - 2) + chars[chars.length - 1];
         }
 
         function getPrivateStudentList(students, separator) {
@@ -1048,6 +1092,7 @@
             document.getElementById('lockAdminBtn').addEventListener('click', lockAdmin);
             document.getElementById('recordForm').addEventListener('submit', saveRecord);
             document.getElementById('clearEditBtn').addEventListener('click', clearEditForm);
+            document.getElementById('nameInput').addEventListener('input', updateNamePrivacyPreview);
             document.getElementById('appendImportBtn').addEventListener('click', function() {
                 importRoster(false);
             });
@@ -1329,6 +1374,16 @@
             document.getElementById('nameInput').value = '';
             document.getElementById('schoolInput').value = '';
             document.getElementById('saveRecordBtn').textContent = '添加';
+            updateNamePrivacyPreview();
+        }
+
+        function updateNamePrivacyPreview() {
+            const preview = document.getElementById('namePrivacyPreview');
+            if (!preview) {
+                return;
+            }
+            const name = document.getElementById('nameInput').value.trim();
+            preview.textContent = `访客显示：${name ? getPrivateStudentName(name, true) : '-'}`;
         }
 
         function handleRecordAction(event) {
@@ -1343,6 +1398,7 @@
                 document.getElementById('nameInput').value = record.name;
                 document.getElementById('schoolInput').value = record.school;
                 document.getElementById('saveRecordBtn').textContent = '保存';
+                updateNamePrivacyPreview();
             }
             if (button.dataset.action === 'delete') {
                 roster.splice(index, 1);
