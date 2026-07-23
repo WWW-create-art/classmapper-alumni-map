@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classmapper-pwa-v4';
+const CACHE_NAME = 'classmapper-pwa-v6';
 const LOCAL_ASSETS = [
   './',
   './index.html',
