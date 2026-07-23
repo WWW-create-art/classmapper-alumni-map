@@ -1,7 +1,8 @@
 import json
 
 
-ADMIN_PASSWORD = "ClassMapper2026"
+ADMIN_PASSWORD_SHA256 = "fda256135a30b12f9a9641e636c3f959768e77e3ee9f768e538d8622aadcfeaa"
+ADMIN_PASSWORD_LEGACY_HASH = "c7b43f64"
 
 SCHOOL_ALIASES = {
     "北京 社会科学院大学": "中国社会科学院大学",
@@ -21,7 +22,8 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
         "__ROSTER__": json.dumps(roster or [], ensure_ascii=False),
         "__LOCATION_LOOKUP__": json.dumps(location_lookup or {}, ensure_ascii=False),
         "__SCHOOL_ALIASES__": json.dumps(SCHOOL_ALIASES, ensure_ascii=False),
-        "__ADMIN_PASSWORD__": json.dumps(ADMIN_PASSWORD, ensure_ascii=False),
+        "__ADMIN_PASSWORD_SHA256__": json.dumps(ADMIN_PASSWORD_SHA256, ensure_ascii=False),
+        "__ADMIN_PASSWORD_LEGACY_HASH__": json.dumps(ADMIN_PASSWORD_LEGACY_HASH, ensure_ascii=False),
     }
 
     for placeholder, value in replacements.items():
@@ -39,6 +41,8 @@ HTML_TEMPLATE = r"""
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow, noarchive">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>同学蹭饭地图</title>
     <style>
@@ -170,6 +174,10 @@ HTML_TEMPLATE = r"""
         .popup-card p {
             margin: 8px 0;
             line-height: 1.5;
+        }
+        .privacy-hint {
+            color: #6b7280;
+            font-size: 12px;
         }
         .amap-actions {
             display: flex;
@@ -468,7 +476,8 @@ HTML_TEMPLATE = r"""
     <script>
         const STORAGE_KEY = 'classmapper-roster-v1';
         const ADMIN_KEY = 'classmapper-admin-v1';
-        const ADMIN_PASSWORD = __ADMIN_PASSWORD__;
+        const ADMIN_PASSWORD_SHA256 = __ADMIN_PASSWORD_SHA256__;
+        const ADMIN_PASSWORD_LEGACY_HASH = __ADMIN_PASSWORD_LEGACY_HASH__;
 
         const mapData = {
             center: __CENTER__,
@@ -544,6 +553,40 @@ HTML_TEMPLATE = r"""
             } catch (error) {
                 return window.__classmapperAdmin === true;
             }
+        }
+
+        function canShowFullNames() {
+            return hasAdminSession();
+        }
+
+        function getPrivateStudentName(name) {
+            const text = String(name || '').trim();
+            if (canShowFullNames()) {
+                return text;
+            }
+            if (!text) {
+                return '同学';
+            }
+            const compoundSurnames = ['欧阳', '司马', '上官', '诸葛', '东方', '夏侯', '尉迟', '公孙', '令狐', '宇文', '慕容', '皇甫', '南宫', '司徒', '司空', '申屠', '长孙', '钟离', '第五'];
+            const compound = compoundSurnames.find((surname) => text.startsWith(surname));
+            if (compound) {
+                return compound + '同学';
+            }
+            if (/^[A-Za-z][A-Za-z\s.'-]*$/.test(text)) {
+                return text.slice(0, 1).toUpperCase() + '同学';
+            }
+            return text.slice(0, 1) + '同学';
+        }
+
+        function getPrivateStudentList(students, separator) {
+            return students.map(getPrivateStudentName).join(separator);
+        }
+
+        function getPrivacyHintHtml() {
+            if (canShowFullNames()) {
+                return '';
+            }
+            return '<p class="privacy-hint">已隐藏完整姓名，管理员解锁后可查看。</p>';
         }
 
         function escapeHtml(value) {
@@ -655,15 +698,16 @@ HTML_TEMPLATE = r"""
             const navigationUrl = getAmapNavigationUrl(loc);
             const safeAddress = escapeHtml(loc.address);
             const safeTitle = escapeHtml(loc.title);
-            const safeStudents = loc.students.map(escapeHtml).join(', ');
+            const safeStudents = escapeHtml(getPrivateStudentList(loc.students, ', '));
             return `
                 <div class="popup-card">
                     <h4>${safeAddress}</h4>
                     <hr style="margin:6px 0;">
                     <p><b>${safeTitle}</b>: ${safeStudents}</p>
+                    ${getPrivacyHintHtml()}
                     <div class="amap-actions">
-                        <a class="amap-link primary" href="${markerUrl}" target="_blank" rel="noopener noreferrer">高德地图</a>
-                        <a class="amap-link secondary" href="${navigationUrl}" target="_blank" rel="noopener noreferrer">导航去这里</a>
+                        <a class="amap-link primary" href="${markerUrl}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">高德地图</a>
+                        <a class="amap-link secondary" href="${navigationUrl}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">导航去这里</a>
                     </div>
                 </div>
             `;
@@ -852,7 +896,7 @@ HTML_TEMPLATE = r"""
                         <span class="callout-text">
                             <span class="callout-title">${escapeHtml(loc.title)}</span>
                             <span class="callout-meta">${loc.count}人 · ${escapeHtml(loc.city || loc.address)}</span>
-                            <span class="callout-students">${escapeHtml(loc.students.join('、'))}</span>
+                            <span class="callout-students">${escapeHtml(getPrivateStudentList(loc.students, '、'))}</span>
                         </span>
                     </button>
                 `;
@@ -939,23 +983,53 @@ HTML_TEMPLATE = r"""
             updateToolbarState();
         }
 
-        function handleLogin(event) {
+        async function handleLogin(event) {
             event.preventDefault();
             const input = document.getElementById('adminPasswordInput');
-            if (input.value === ADMIN_PASSWORD) {
+            if (await isValidAdminPassword(input.value)) {
                 setAdminSession(true);
                 input.value = '';
                 document.getElementById('loginMessage').textContent = '';
                 updateAdminUi();
+                renderAll();
                 return;
             }
             document.getElementById('loginMessage').textContent = '密码不正确';
+        }
+
+        async function isValidAdminPassword(value) {
+            const text = String(value || '');
+            try {
+                if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+                    const bytes = new TextEncoder().encode(text);
+                    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+                    const hash = Array.from(new Uint8Array(digest))
+                        .map((byte) => byte.toString(16).padStart(2, '0'))
+                        .join('');
+                    if (hash === ADMIN_PASSWORD_SHA256) {
+                        return true;
+                    }
+                }
+            } catch (error) {
+                // Fall back to the lightweight local hash below.
+            }
+            return getLegacyPasswordHash(text) === ADMIN_PASSWORD_LEGACY_HASH;
+        }
+
+        function getLegacyPasswordHash(value) {
+            let hash = 2166136261;
+            for (let index = 0; index < value.length; index += 1) {
+                hash ^= value.charCodeAt(index);
+                hash = Math.imul(hash, 16777619) >>> 0;
+            }
+            return hash.toString(16).padStart(8, '0');
         }
 
         function lockAdmin() {
             setAdminSession(false);
             clearEditForm();
             updateAdminUi();
+            renderAll();
         }
 
         function updateAdminUi() {

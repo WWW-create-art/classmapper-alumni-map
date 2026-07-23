@@ -3,6 +3,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow, noarchive">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>同学蹭饭地图</title>
     <style>
@@ -134,6 +136,10 @@
         .popup-card p {
             margin: 8px 0;
             line-height: 1.5;
+        }
+        .privacy-hint {
+            color: #6b7280;
+            font-size: 12px;
         }
         .amap-actions {
             display: flex;
@@ -378,19 +384,21 @@
     <style>
         .pwa-install-panel {
             position: fixed;
-            left: max(12px, env(safe-area-inset-left));
-            right: max(12px, env(safe-area-inset-right));
-            bottom: max(12px, env(safe-area-inset-bottom));
+            top: 50%;
+            left: 50%;
             z-index: 2200;
             display: none;
-            align-items: center;
+            width: min(360px, calc(100% - 32px));
+            transform: translate(-50%, -50%);
+            align-items: stretch;
+            flex-direction: column;
             gap: 10px;
-            padding: 10px;
+            padding: 14px;
             color: #172033;
             background: rgba(255, 255, 255, 0.95);
             border: 1px solid rgba(28, 40, 58, 0.13);
             border-radius: 8px;
-            box-shadow: 0 10px 28px rgba(21, 35, 53, 0.18);
+            box-shadow: 0 18px 46px rgba(21, 35, 53, 0.24);
             backdrop-filter: blur(10px);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
@@ -420,7 +428,8 @@
 
         .pwa-install-panel__actions {
             flex: 0 0 auto;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr 34px;
             gap: 6px;
         }
 
@@ -449,21 +458,8 @@
             line-height: 1;
         }
 
-        @media (min-width: 720px) {
-            .pwa-install-panel {
-                left: auto;
-                width: 390px;
-            }
-        }
-
         @media (max-width: 430px) {
-            .pwa-install-panel {
-                align-items: stretch;
-                flex-direction: column;
-            }
-
             .pwa-install-panel__actions {
-                display: grid;
                 grid-template-columns: 1fr 1fr 34px;
             }
         }
@@ -532,7 +528,8 @@
     <script>
         const STORAGE_KEY = 'classmapper-roster-v1';
         const ADMIN_KEY = 'classmapper-admin-v1';
-        const ADMIN_PASSWORD = "ClassMapper2026";
+        const ADMIN_PASSWORD_SHA256 = "fda256135a30b12f9a9641e636c3f959768e77e3ee9f768e538d8622aadcfeaa";
+        const ADMIN_PASSWORD_LEGACY_HASH = "c7b43f64";
 
         const mapData = {
             center: [32.1035, 116.05803125],
@@ -608,6 +605,40 @@
             } catch (error) {
                 return window.__classmapperAdmin === true;
             }
+        }
+
+        function canShowFullNames() {
+            return hasAdminSession();
+        }
+
+        function getPrivateStudentName(name) {
+            const text = String(name || '').trim();
+            if (canShowFullNames()) {
+                return text;
+            }
+            if (!text) {
+                return '同学';
+            }
+            const compoundSurnames = ['欧阳', '司马', '上官', '诸葛', '东方', '夏侯', '尉迟', '公孙', '令狐', '宇文', '慕容', '皇甫', '南宫', '司徒', '司空', '申屠', '长孙', '钟离', '第五'];
+            const compound = compoundSurnames.find((surname) => text.startsWith(surname));
+            if (compound) {
+                return compound + '同学';
+            }
+            if (/^[A-Za-z][A-Za-z\s.'-]*$/.test(text)) {
+                return text.slice(0, 1).toUpperCase() + '同学';
+            }
+            return text.slice(0, 1) + '同学';
+        }
+
+        function getPrivateStudentList(students, separator) {
+            return students.map(getPrivateStudentName).join(separator);
+        }
+
+        function getPrivacyHintHtml() {
+            if (canShowFullNames()) {
+                return '';
+            }
+            return '<p class="privacy-hint">已隐藏完整姓名，管理员解锁后可查看。</p>';
         }
 
         function escapeHtml(value) {
@@ -719,15 +750,16 @@
             const navigationUrl = getAmapNavigationUrl(loc);
             const safeAddress = escapeHtml(loc.address);
             const safeTitle = escapeHtml(loc.title);
-            const safeStudents = loc.students.map(escapeHtml).join(', ');
+            const safeStudents = escapeHtml(getPrivateStudentList(loc.students, ', '));
             return `
                 <div class="popup-card">
                     <h4>${safeAddress}</h4>
                     <hr style="margin:6px 0;">
                     <p><b>${safeTitle}</b>: ${safeStudents}</p>
+                    ${getPrivacyHintHtml()}
                     <div class="amap-actions">
-                        <a class="amap-link primary" href="${markerUrl}" target="_blank" rel="noopener noreferrer">高德地图</a>
-                        <a class="amap-link secondary" href="${navigationUrl}" target="_blank" rel="noopener noreferrer">导航去这里</a>
+                        <a class="amap-link primary" href="${markerUrl}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">高德地图</a>
+                        <a class="amap-link secondary" href="${navigationUrl}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">导航去这里</a>
                     </div>
                 </div>
             `;
@@ -916,7 +948,7 @@
                         <span class="callout-text">
                             <span class="callout-title">${escapeHtml(loc.title)}</span>
                             <span class="callout-meta">${loc.count}人 · ${escapeHtml(loc.city || loc.address)}</span>
-                            <span class="callout-students">${escapeHtml(loc.students.join('、'))}</span>
+                            <span class="callout-students">${escapeHtml(getPrivateStudentList(loc.students, '、'))}</span>
                         </span>
                     </button>
                 `;
@@ -1003,23 +1035,53 @@
             updateToolbarState();
         }
 
-        function handleLogin(event) {
+        async function handleLogin(event) {
             event.preventDefault();
             const input = document.getElementById('adminPasswordInput');
-            if (input.value === ADMIN_PASSWORD) {
+            if (await isValidAdminPassword(input.value)) {
                 setAdminSession(true);
                 input.value = '';
                 document.getElementById('loginMessage').textContent = '';
                 updateAdminUi();
+                renderAll();
                 return;
             }
             document.getElementById('loginMessage').textContent = '密码不正确';
+        }
+
+        async function isValidAdminPassword(value) {
+            const text = String(value || '');
+            try {
+                if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+                    const bytes = new TextEncoder().encode(text);
+                    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+                    const hash = Array.from(new Uint8Array(digest))
+                        .map((byte) => byte.toString(16).padStart(2, '0'))
+                        .join('');
+                    if (hash === ADMIN_PASSWORD_SHA256) {
+                        return true;
+                    }
+                }
+            } catch (error) {
+                // Fall back to the lightweight local hash below.
+            }
+            return getLegacyPasswordHash(text) === ADMIN_PASSWORD_LEGACY_HASH;
+        }
+
+        function getLegacyPasswordHash(value) {
+            let hash = 2166136261;
+            for (let index = 0; index < value.length; index += 1) {
+                hash ^= value.charCodeAt(index);
+                hash = Math.imul(hash, 16777619) >>> 0;
+            }
+            return hash.toString(16).padStart(8, '0');
         }
 
         function lockAdmin() {
             setAdminSession(false);
             clearEditForm();
             updateAdminUi();
+            renderAll();
         }
 
         function updateAdminUi() {
@@ -1301,6 +1363,8 @@
                     return;
                 }
 
+                installBtn.style.display = '';
+                fullscreenBtn.style.display = '';
                 if (isiOS && !deferredInstallPrompt) {
                     note.textContent = '在 Safari 里点分享，再选“添加到主屏幕”。';
                     installBtn.textContent = '知道了';

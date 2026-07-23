@@ -22,19 +22,21 @@ HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
     <style>
         .pwa-install-panel {
             position: fixed;
-            left: max(12px, env(safe-area-inset-left));
-            right: max(12px, env(safe-area-inset-right));
-            bottom: max(12px, env(safe-area-inset-bottom));
+            top: 50%;
+            left: 50%;
             z-index: 2200;
             display: none;
-            align-items: center;
+            width: min(360px, calc(100% - 32px));
+            transform: translate(-50%, -50%);
+            align-items: stretch;
+            flex-direction: column;
             gap: 10px;
-            padding: 10px;
+            padding: 14px;
             color: #172033;
             background: rgba(255, 255, 255, 0.95);
             border: 1px solid rgba(28, 40, 58, 0.13);
             border-radius: 8px;
-            box-shadow: 0 10px 28px rgba(21, 35, 53, 0.18);
+            box-shadow: 0 18px 46px rgba(21, 35, 53, 0.24);
             backdrop-filter: blur(10px);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
@@ -64,7 +66,8 @@ HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
 
         .pwa-install-panel__actions {
             flex: 0 0 auto;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr 34px;
             gap: 6px;
         }
 
@@ -93,21 +96,8 @@ HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
             line-height: 1;
         }
 
-        @media (min-width: 720px) {
-            .pwa-install-panel {
-                left: auto;
-                width: 390px;
-            }
-        }
-
         @media (max-width: 430px) {
-            .pwa-install-panel {
-                align-items: stretch;
-                flex-direction: column;
-            }
-
             .pwa-install-panel__actions {
-                display: grid;
                 grid-template-columns: 1fr 1fr 34px;
             }
         }
@@ -162,6 +152,8 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
                     return;
                 }
 
+                installBtn.style.display = '';
+                fullscreenBtn.style.display = '';
                 if (isiOS && !deferredInstallPrompt) {
                     note.textContent = '在 Safari 里点分享，再选“添加到主屏幕”。';
                     installBtn.textContent = '知道了';
@@ -239,6 +231,7 @@ def main() -> None:
 
     write_manifest()
     write_service_worker()
+    write_robots()
     write_icons()
     print(f"Built {WEB_APP}")
 
@@ -283,11 +276,12 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v2';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v3';
 const LOCAL_ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './robots.txt',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png'
 ];
@@ -338,6 +332,13 @@ self.addEventListener('fetch', (event) => {
 });
 """
     (WEB_APP / "sw.js").write_text(sw, encoding="utf-8")
+
+
+def write_robots() -> None:
+    (WEB_APP / "robots.txt").write_text(
+        "User-agent: *\nDisallow: /\n",
+        encoding="utf-8",
+    )
 
 
 def write_icons() -> None:
