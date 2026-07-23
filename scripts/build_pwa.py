@@ -15,10 +15,7 @@ WEB_APP = ROOT / "web-app"
 ICON_DIR = WEB_APP / "assets" / "icons"
 DATA_DIR = WEB_APP / "data"
 
-HEAD_SNIPPET = """    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <meta name="theme-color" content="#1976d2">
+HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="同学蹭饭地图">
@@ -28,22 +25,6 @@ HEAD_SNIPPET = """    <meta http-equiv="Cache-Control" content="no-store, no-cac
 """
 
 BODY_SNIPPET = """    <script>
-        (function() {
-            try {
-                localStorage.removeItem('classmapper-roster-v1');
-            } catch (error) {}
-
-            if ('caches' in window) {
-                caches.keys()
-                    .then(function(keys) {
-                        return Promise.all(keys
-                            .filter(function(key) { return key.indexOf('classmapper-pwa-') === 0; })
-                            .map(function(key) { return caches.delete(key); }));
-                    })
-                    .catch(function() {});
-            }
-        })();
-
         if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
             (function() {
                 var refreshing = false;
@@ -63,9 +44,7 @@ BODY_SNIPPET = """    <script>
                 }
 
                 window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(function() {
-                        return navigator.serviceWorker.register('./sw.js');
-                    }).then(function(registration) {
+                    navigator.serviceWorker.register('./sw.js').then(function(registration) {
                         activateWaitingWorker(registration);
                         registration.update().catch(function() {});
                         registration.addEventListener('updatefound', function() {
@@ -105,7 +84,6 @@ def main() -> None:
 
     write_manifest()
     write_service_worker()
-    write_refresh_page()
     write_robots()
     write_icons()
     print(f"Built {WEB_APP}")
@@ -151,38 +129,35 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v16';
-const CACHE_PREFIX = 'classmapper-pwa-';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v15';
+const LOCAL_ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './robots.txt',
+  './assets/icons/icon-192.png',
+  './assets/icons/icon-512.png'
+];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting());
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(LOCAL_ASSETS))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX)).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then((clients) => Promise.all(clients.map((client) => {
-        if ('navigate' in client) {
-          return client.navigate(client.url).catch(() => {});
-        }
-        return Promise.resolve();
-      })))
   );
 });
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
-    return;
-  }
-  if (event.data && event.data.type === 'CLEAR_CLASSMAPPER_CACHE') {
-    event.waitUntil(
-      caches.keys()
-        .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX)).map((key) => caches.delete(key))))
-    );
   }
 });
 
@@ -201,96 +176,27 @@ self.addEventListener('fetch', (event) => {
     const freshRequest = new Request(event.request, { cache: 'reload' });
     event.respondWith(
       fetch(freshRequest)
-        .catch(() => new Response('<!doctype html><meta charset="utf-8"><title>需要联网刷新</title><body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:24px;text-align:center;"><h3>需要联网刷新</h3><p>请连上网络后重新打开同学蹭饭地图。</p></body>', {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        }))
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
 
   event.respondWith(
-    fetch(new Request(event.request, { cache: 'reload' }))
+    caches.match(event.request)
+      .then((cached) => cached || fetch(event.request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      }))
   );
 });
 """
     (WEB_APP / "sw.js").write_text(sw, encoding="utf-8")
-
-
-def write_refresh_page() -> None:
-    html = """<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>正在刷新同学蹭饭地图</title>
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f7fb;
-      color: #1f2937;
-    }
-    body {
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      text-align: center;
-      box-sizing: border-box;
-    }
-    .panel {
-      max-width: 360px;
-      line-height: 1.6;
-    }
-    .title {
-      margin: 0 0 8px;
-      font-size: 18px;
-      font-weight: 700;
-    }
-    .text {
-      margin: 0;
-      font-size: 14px;
-      color: #4b5563;
-    }
-  </style>
-</head>
-<body>
-  <div class="panel">
-    <p class="title">正在切到最新版</p>
-    <p class="text">会自动清理旧缓存，然后重新打开地图。</p>
-  </div>
-  <script>
-    (async function() {
-      try {
-        localStorage.removeItem('classmapper-roster-v1');
-      } catch (error) {}
-
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys
-            .filter((key) => key.indexOf('classmapper-pwa-') === 0)
-            .map((key) => caches.delete(key)));
-        }
-      } catch (error) {}
-
-      try {
-        if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registrations.map((registration) => registration.unregister()));
-        }
-      } catch (error) {}
-
-      window.location.replace('./?fresh=' + Date.now());
-    })();
-  </script>
-</body>
-</html>
-"""
-    (WEB_APP / "refresh.html").write_text(html, encoding="utf-8")
 
 
 def write_robots() -> None:
