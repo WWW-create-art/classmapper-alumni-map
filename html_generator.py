@@ -1,10 +1,12 @@
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 
 ADMIN_PASSWORD_SHA256 = "11b2b0a25ddb34d735847de6b74cf2c904959656b7d42287fcd5bb33300483b9"
 ADMIN_PASSWORD_LEGACY_HASH = "7770de24"
+VENDOR_ASSETS_DIR = Path(__file__).resolve().parent / "assets" / "vendor"
 GITHUB_PUBLISH_CONFIG = {
     "owner": "WWW-create-art",
     "repo": "classmapper-alumni-map",
@@ -54,6 +56,12 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
 
     data_path = Path(output_path).with_name("map-data.json")
     data_path.write_text(json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    if VENDOR_ASSETS_DIR.exists():
+        shutil.copytree(
+            VENDOR_ASSETS_DIR,
+            Path(output_path).parent / "assets" / "vendor",
+            dirs_exist_ok=True,
+        )
 
     print(f"✅ 已生成优化版蹭饭地图: {output_path}")
     return output_path
@@ -543,8 +551,8 @@ HTML_TEMPLATE = r"""
             }
         }
     </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.js"></script>
+    <link rel="stylesheet" href="./assets/vendor/leaflet/leaflet.min.css" />
+    <script src="./assets/vendor/leaflet/leaflet.min.js"></script>
 </head>
 <body>
     <div class="map-title" id="mapTitle">同学蹭饭地图</div>

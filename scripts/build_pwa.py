@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_HTML = ROOT / "蹭饭地图结果" / "蹭饭地图.html"
 SOURCE_MAP_DATA = ROOT / "蹭饭地图结果" / "map-data.json"
 SOURCE_ROSTER = ROOT / "data" / "jielong.csv"
+SOURCE_VENDOR = ROOT / "assets" / "vendor"
 WEB_APP = ROOT / "web-app"
 ICON_DIR = WEB_APP / "assets" / "icons"
 DATA_DIR = WEB_APP / "data"
+VENDOR_DIR = WEB_APP / "assets" / "vendor"
 
 HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
     <meta name="mobile-web-app-capable" content="yes">
@@ -73,6 +75,8 @@ def main() -> None:
     WEB_APP.mkdir(exist_ok=True)
     ICON_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if SOURCE_VENDOR.exists():
+        shutil.copytree(SOURCE_VENDOR, VENDOR_DIR, dirs_exist_ok=True)
 
     html = SOURCE_HTML.read_text(encoding="utf-8")
     html = inject_once(html, "</head>", HEAD_SNIPPET, "manifest.webmanifest")
@@ -135,6 +139,11 @@ const LOCAL_ASSETS = [
   './index.html',
   './manifest.webmanifest',
   './robots.txt',
+  './assets/vendor/leaflet/leaflet.min.css',
+  './assets/vendor/leaflet/leaflet.min.js',
+  './assets/vendor/leaflet/images/marker-icon.png',
+  './assets/vendor/leaflet/images/marker-icon-2x.png',
+  './assets/vendor/leaflet/images/marker-shadow.png',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png'
 ];

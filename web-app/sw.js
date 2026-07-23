@@ -4,6 +4,11 @@ const LOCAL_ASSETS = [
   './index.html',
   './manifest.webmanifest',
   './robots.txt',
+  './assets/vendor/leaflet/leaflet.min.css',
+  './assets/vendor/leaflet/leaflet.min.js',
+  './assets/vendor/leaflet/images/marker-icon.png',
+  './assets/vendor/leaflet/images/marker-icon-2x.png',
+  './assets/vendor/leaflet/images/marker-shadow.png',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png'
 ];
