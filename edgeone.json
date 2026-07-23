@@ -1,0 +1,6 @@
+{
+  "name": "classmapper-alumni-map",
+  "installCommand": "python -m pip install pandas numpy geopy tqdm",
+  "buildCommand": "python main.py data/jielong.csv --no-open --map-only && python scripts/build_pwa.py",
+  "outputDirectory": "web-app"
+}

@@ -51,6 +51,14 @@ Build Command: python main.py data/jielong.csv --no-open --map-only && python sc
 Output Directory: web-app
 ```
 
+仓库里已经提供 `edgeone.json`，EdgeOne 如果自动读取配置，就按仓库配置即可。为了让构建更快，`edgeone.json` 只安装地图生成必需的轻量依赖：
+
+```text
+Install Command: python -m pip install pandas numpy geopy tqdm
+Build Command: python main.py data/jielong.csv --no-open --map-only && python scripts/build_pwa.py
+Output Directory: web-app
+```
+
 管理员在网页发布名单后，会提交到 `data/jielong.csv`；GitHub Pages 和 EdgeOne 都应重新构建。这个方案更省心，但初次配置需要登录平台并授权 GitHub。
 
 ### 域名和备案
