@@ -1906,25 +1906,24 @@ HTML_TEMPLATE = r"""
                     `let mapData = ${safeJsonForScript(viewerData)};\n\n        let map = null;`
                 );
 
-            [
-                "adminToggleBtn",
-                "closeAdminBtn",
-                "loginForm",
-                "lockAdminBtn",
-                "recordForm",
-                "clearEditBtn",
-                "nameInput",
-                "appendImportBtn",
-                "replaceImportBtn",
-                "exportCsvBtn",
-                "publishOnlineBtn",
-                "resetRosterBtn",
-                "recordList",
-                "viewerDocBtn"
-            ].forEach((id) => {
-                next = next.replace(new RegExp(`\\n\\s*bind(?:Click|Submit|Input)\\('${id}'[\\s\\S]*?\\);`, 'm'), '');
-            });
             next = next
+                .replace(
+                    /function setupControls\(\) \{[\s\S]*?\n\s*\}\n\n\s*function bindClick/,
+                    `function setupControls() {
+            document.getElementById('pointModeBtn').addEventListener('click', function() {
+                setMode('points');
+            });
+            document.getElementById('calloutModeBtn').addEventListener('click', function() {
+                setMode('callouts');
+            });
+            const calloutPanel = document.getElementById('calloutPanel');
+            if (calloutPanel) {
+                calloutPanel.addEventListener('scroll', scheduleCalloutLines);
+            }
+        }
+
+        function bindClick`
+                )
                 .replace(/\n\s*renderSchoolOptions\(\);/, '')
                 .replace(/\n\s*updateAdminUi\(\);/, '')
                 .replace(/\n\s*renderAdminList\(\);/g, '')
@@ -1944,7 +1943,7 @@ HTML_TEMPLATE = r"""
             const js = (await fetchTextAsset('./assets/vendor/leaflet/leaflet.min.js')).replace(new RegExp('<' + '/script', 'gi'), '<\\/script');
             const scriptClose = '<' + '/script>';
             return html
-                .replace(/\s*<link rel="stylesheet" href="\.\/assets\/vendor\/leaflet\/leaflet\.min\.css" \/>/, `\n    <style>\n${css}\n    </style>`)
+                .replace(/\s*<link rel="stylesheet" href="\.\/assets\/vendor\/leaflet\/leaflet\.min\.css"\s*\/?>/, `\n    <style>\n${css}\n    </style>`)
                 .replace(/\s*<script src="\.\/assets\/vendor\/leaflet\/leaflet\.min\.js"><\/script>/, `\n    <script>\n${js}\n    ${scriptClose}`);
         }
 
