@@ -1220,11 +1220,15 @@ HTML_TEMPLATE = r"""
                 setupControls();
                 renderAll();
 
-                map.whenReady(function() {
+                const hideLoadingOverlay = function() {
                     setTimeout(function() {
-                        loadingOverlay.style.display = 'none';
+                        if (loadingOverlay) {
+                            loadingOverlay.style.display = 'none';
+                        }
                     }, 350);
-                });
+                };
+                map.whenReady(hideLoadingOverlay);
+                setTimeout(hideLoadingOverlay, 1600);
             } catch (error) {
                 console.error('地图初始化失败:', error);
                 loadingOverlay.innerHTML = `
