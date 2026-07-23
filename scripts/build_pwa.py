@@ -107,7 +107,7 @@ HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
 BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="dialog" aria-live="polite" aria-label="全屏打开">
         <span class="pwa-install-panel__copy">
             <strong class="pwa-install-panel__title">全屏打开</strong>
-            <span class="pwa-install-panel__note" id="pwaInstallNote">装到桌面后，从图标进入就是应用模式。</span>
+            <span class="pwa-install-panel__note" id="pwaInstallNote">点全屏可立即隐藏浏览器栏，安装后从图标进入更像应用。</span>
         </span>
         <span class="pwa-install-panel__actions">
             <button type="button" id="pwaInstallBtn">安装</button>
@@ -132,6 +132,7 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
             var dismissedKey = 'classmapper-pwa-install-dismissed';
             var isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             var isAndroid = /Android/i.test(navigator.userAgent);
+            var restoreTimer = 0;
 
             function isAppMode() {
                 return window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -139,13 +140,20 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
                     window.navigator.standalone === true;
             }
 
+            function isFullscreenActive() {
+                return !!(document.fullscreenElement || document.webkitFullscreenElement);
+            }
+
             function canRequestFullscreen() {
                 var root = document.documentElement;
                 return !!(root.requestFullscreen || root.webkitRequestFullscreen);
             }
 
-            function updatePanel() {
-                if (!panel || isAppMode() || sessionStorage.getItem(dismissedKey) === '1') {
+            function updatePanel(reason) {
+                if (!panel || isAppMode() || isFullscreenActive() || sessionStorage.getItem(dismissedKey) === '1') {
+                    if (panel) {
+                        panel.classList.remove('is-visible');
+                    }
                     return;
                 }
                 if (!isAndroid && !isiOS && !deferredInstallPrompt) {
@@ -154,6 +162,10 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
 
                 installBtn.style.display = '';
                 fullscreenBtn.style.display = '';
+                installBtn.textContent = '安装';
+                note.textContent = reason === 'restore'
+                    ? '刚刚退出了全屏，点一下可以回到全屏。安装后更稳定。'
+                    : '点全屏可立即隐藏浏览器栏，安装后从图标进入更像应用。';
                 if (isiOS && !deferredInstallPrompt) {
                     note.textContent = '在 Safari 里点分享，再选“添加到主屏幕”。';
                     installBtn.textContent = '知道了';
@@ -166,10 +178,43 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
                 panel.classList.add('is-visible');
             }
 
+            function schedulePanelUpdate(reason) {
+                window.clearTimeout(restoreTimer);
+                restoreTimer = window.setTimeout(function() {
+                    updatePanel(reason);
+                }, reason === 'restore' ? 450 : 900);
+            }
+
             window.addEventListener('beforeinstallprompt', function(event) {
                 event.preventDefault();
                 deferredInstallPrompt = event;
                 updatePanel();
+            });
+
+            document.addEventListener('fullscreenchange', function() {
+                if (isFullscreenActive()) {
+                    panel.classList.remove('is-visible');
+                } else {
+                    schedulePanelUpdate('restore');
+                }
+            });
+
+            document.addEventListener('webkitfullscreenchange', function() {
+                if (isFullscreenActive()) {
+                    panel.classList.remove('is-visible');
+                } else {
+                    schedulePanelUpdate('restore');
+                }
+            });
+
+            window.addEventListener('pageshow', function() {
+                schedulePanelUpdate();
+            });
+
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden) {
+                    schedulePanelUpdate();
+                }
             });
 
             if (installBtn) {
@@ -210,7 +255,7 @@ BODY_SNIPPET = """    <div id="pwaInstallPanel" class="pwa-install-panel" role="
                 });
             }
 
-            setTimeout(updatePanel, 900);
+            schedulePanelUpdate();
         })();
     </script>
 """
@@ -276,7 +321,7 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v3';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v4';
 const LOCAL_ASSETS = [
   './',
   './index.html',
