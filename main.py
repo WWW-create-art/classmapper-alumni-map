@@ -8,7 +8,6 @@ from tqdm import tqdm
 # 导入自定义模块
 from config import get_user_config
 from geolocation import KNOWN_LOCATIONS, load_cache, save_cache, get_school_location, add_location_data
-from visualization import generate_wordcloud, generate_stats
 from html_generator import generate_html_template
 from utils import open_output_directory
 
@@ -18,6 +17,7 @@ def parse_args(argv=None):
     parser.add_argument("input_path", nargs="?", help="名单文件路径，支持 xlsx/xls/csv")
     parser.add_argument("-o", "--output-dir", default="蹭饭地图结果", help="输出目录")
     parser.add_argument("--no-open", action="store_true", help="生成完成后不自动打开地图和输出目录")
+    parser.add_argument("--map-only", action="store_true", help="只生成地图网页，跳过词云和统计表")
     return parser.parse_args(argv)
 
 
@@ -92,18 +92,26 @@ def main(argv=None):
     map_path = os.path.join(output_dir, "蹭饭地图.html")
     generate_html_template(center, markers, map_path, roster, location_lookup)
     
-    # 生成词云图
-    wordcloud_path = generate_wordcloud(df, output_dir)
-    
-    # 生成统计表格
-    stats_path = generate_stats(df, output_dir)
+    wordcloud_path = None
+    stats_path = None
+    if not args.map_only:
+        from visualization import generate_wordcloud, generate_stats
+
+        # 生成词云图
+        wordcloud_path = generate_wordcloud(df, output_dir)
+
+        # 生成统计表格
+        stats_path = generate_stats(df, output_dir)
     
     # 显示结果
     print("\n" + "=" * 50)
     print("🎉 处理完成！生成的文件:")
     print(f"- 蹭饭地图: {map_path}")
-    print(f"- 学校词云: {wordcloud_path}")
-    print(f"- 统计数据: {stats_path}")
+    if wordcloud_path and stats_path:
+        print(f"- 学校词云: {wordcloud_path}")
+        print(f"- 统计数据: {stats_path}")
+    else:
+        print("- 已跳过词云和统计表")
     print("=" * 50)
     
     # 尝试打开地图

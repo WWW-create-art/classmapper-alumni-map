@@ -3,6 +3,12 @@ import json
 
 ADMIN_PASSWORD_SHA256 = "fda256135a30b12f9a9641e636c3f959768e77e3ee9f768e538d8622aadcfeaa"
 ADMIN_PASSWORD_LEGACY_HASH = "c7b43f64"
+GITHUB_PUBLISH_CONFIG = {
+    "owner": "WWW-create-art",
+    "repo": "classmapper-alumni-map",
+    "branch": "main",
+    "path": "data/jielong.csv",
+}
 
 SCHOOL_ALIASES = {
     "北京 社会科学院大学": "中国社会科学院大学",
@@ -24,6 +30,7 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
         "__SCHOOL_ALIASES__": json.dumps(SCHOOL_ALIASES, ensure_ascii=False),
         "__ADMIN_PASSWORD_SHA256__": json.dumps(ADMIN_PASSWORD_SHA256, ensure_ascii=False),
         "__ADMIN_PASSWORD_LEGACY_HASH__": json.dumps(ADMIN_PASSWORD_LEGACY_HASH, ensure_ascii=False),
+        "__GITHUB_PUBLISH_CONFIG__": json.dumps(GITHUB_PUBLISH_CONFIG, ensure_ascii=False),
     }
 
     for placeholder, value in replacements.items():
@@ -125,6 +132,10 @@ HTML_TEMPLATE = r"""
             color: #1f2937;
             font-size: 13px;
             line-height: 1;
+        }
+        .admin-panel button:disabled {
+            cursor: default;
+            opacity: 0.62;
         }
         .toolbar button[aria-pressed="true"],
         .admin-panel .primary-btn {
@@ -351,6 +362,21 @@ HTML_TEMPLATE = r"""
             display: grid;
             gap: 5px;
         }
+        .publish-box {
+            display: grid;
+            gap: 8px;
+            margin: 4px 0 10px;
+            padding: 10px;
+            border: 1px solid #d7e4f5;
+            border-radius: 8px;
+            background: #f8fbff;
+        }
+        .publish-hint {
+            margin: 0;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.45;
+        }
         .privacy-preview {
             min-height: 15px;
             padding: 0 2px;
@@ -523,7 +549,7 @@ HTML_TEMPLATE = r"""
                     <h2>名单管理</h2>
                     <button type="button" id="lockAdminBtn">锁定</button>
                 </div>
-                <p class="status-text">修改会先保存在当前浏览器；要让所有同学都看到，需要导出 CSV 后重新发布。访客姓名会自动按规则隐藏。</p>
+                <p class="status-text">修改会先在当前页面预览；点“发布到线上”后，所有同学刷新就能看到新名单。访客姓名会自动按规则隐藏。</p>
                 <form class="record-form" id="recordForm">
                     <input type="hidden" id="editIndexInput">
                     <div class="record-grid">
@@ -545,6 +571,13 @@ HTML_TEMPLATE = r"""
                     <button type="button" id="replaceImportBtn">覆盖导入</button>
                     <button type="button" id="exportCsvBtn">导出CSV</button>
                     <button type="button" class="danger-btn" id="resetRosterBtn">恢复初始</button>
+                </div>
+                <div class="publish-box">
+                    <input type="password" id="githubTokenInput" autocomplete="off" placeholder="GitHub token（只用于本次发布，不保存）">
+                    <div class="admin-actions">
+                        <button class="primary-btn" type="button" id="publishOnlineBtn">发布到线上</button>
+                    </div>
+                    <p class="publish-hint">需要 token 有这个仓库的 Contents 读写权限；发布后 GitHub Pages 通常几十秒内完成部署。</p>
                 </div>
                 <p class="status-text" id="adminMessage"></p>
                 <div class="record-list" id="recordList"></div>
@@ -790,6 +823,7 @@ HTML_TEMPLATE = r"""
         const ADMIN_KEY = 'classmapper-admin-v1';
         const ADMIN_PASSWORD_SHA256 = __ADMIN_PASSWORD_SHA256__;
         const ADMIN_PASSWORD_LEGACY_HASH = __ADMIN_PASSWORD_LEGACY_HASH__;
+        const GITHUB_PUBLISH_CONFIG = __GITHUB_PUBLISH_CONFIG__;
 
         const mapData = {
             center: __CENTER__,
@@ -1131,6 +1165,7 @@ HTML_TEMPLATE = r"""
                 importRoster(true);
             });
             document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+            document.getElementById('publishOnlineBtn').addEventListener('click', publishRosterOnline);
             document.getElementById('resetRosterBtn').addEventListener('click', resetRoster);
             document.getElementById('recordList').addEventListener('click', handleRecordAction);
             document.getElementById('calloutPanel').addEventListener('scroll', scheduleCalloutLines);
@@ -1501,6 +1536,7 @@ HTML_TEMPLATE = r"""
             normalizeRosterOrder();
             writeStoredRoster();
             renderAll();
+            setAdminMessage(`${getRosterSummary()} · 草稿未发布，点“发布到线上”后全员可见`);
         }
 
         function renderAdminList() {
@@ -1539,11 +1575,8 @@ HTML_TEMPLATE = r"""
         }
 
         function exportCsv() {
-            const rows = [['序号', '姓名', '学校']].concat(
-                roster.map((record, index) => [index + 1, record.name, record.school])
-            );
-            const csv = rows.map((row) => row.map(csvCell).join(',')).join('\\n');
-            const blob = new Blob(['\\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const csv = getRosterCsv(false);
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const anchor = document.createElement('a');
             anchor.href = url;
@@ -1554,12 +1587,150 @@ HTML_TEMPLATE = r"""
             URL.revokeObjectURL(url);
         }
 
+        function getRosterCsv(includeOriginalSchool) {
+            normalizeRosterOrder();
+            const header = includeOriginalSchool ? ['序号', '姓名', '学校', '原始学校'] : ['序号', '姓名', '学校'];
+            const rows = [header].concat(
+                roster.map((record, index) => {
+                    const base = [index + 1, record.name, record.school];
+                    return includeOriginalSchool ? base.concat(record.originalSchool || record.school) : base;
+                })
+            );
+            return rows.map((row) => row.map(csvCell).join(',')).join('\n') + '\n';
+        }
+
         function csvCell(value) {
             const text = String(value ?? '');
-            if (/[",\\n]/.test(text)) {
+            if (/[",\n]/.test(text)) {
                 return '"' + text.replace(/"/g, '""') + '"';
             }
             return text;
+        }
+
+        function getGitHubContentsUrl() {
+            const encodedPath = GITHUB_PUBLISH_CONFIG.path.split('/').map(encodeURIComponent).join('/');
+            return `https://api.github.com/repos/${encodeURIComponent(GITHUB_PUBLISH_CONFIG.owner)}/${encodeURIComponent(GITHUB_PUBLISH_CONFIG.repo)}/contents/${encodedPath}`;
+        }
+
+        function getGitHubHeaders(token) {
+            return {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28'
+            };
+        }
+
+        function utf8ToBase64(text) {
+            if (window.TextEncoder) {
+                const bytes = new TextEncoder().encode(text);
+                let binary = '';
+                const chunkSize = 0x8000;
+                for (let index = 0; index < bytes.length; index += chunkSize) {
+                    binary += String.fromCharCode.apply(null, bytes.subarray(index, index + chunkSize));
+                }
+                return btoa(binary);
+            }
+            return btoa(unescape(encodeURIComponent(text)));
+        }
+
+        async function readGitHubError(response) {
+            const text = await response.text();
+            try {
+                const data = JSON.parse(text);
+                return data.message || text || response.statusText;
+            } catch (error) {
+                return text || response.statusText;
+            }
+        }
+
+        function getPublishErrorMessage(status, message) {
+            if (status === 401) {
+                return '发布失败：GitHub token 不正确或已过期';
+            }
+            if (status === 403) {
+                return '发布失败：token 没有这个仓库的 Contents 读写权限，或 GitHub 暂时拒绝访问';
+            }
+            if (status === 409) {
+                return '发布失败：线上名单刚刚被改过，请刷新页面后再试';
+            }
+            return `发布失败：${message || '请检查网络后重试'}`;
+        }
+
+        function setPublishBusy(isBusy) {
+            const button = document.getElementById('publishOnlineBtn');
+            if (!button) {
+                return;
+            }
+            button.disabled = isBusy;
+            button.textContent = isBusy ? '发布中...' : '发布到线上';
+        }
+
+        async function getOnlineCsvSha(token) {
+            const url = `${getGitHubContentsUrl()}?ref=${encodeURIComponent(GITHUB_PUBLISH_CONFIG.branch)}`;
+            const response = await fetch(url, {
+                headers: getGitHubHeaders(token),
+                cache: 'no-store'
+            });
+            if (response.status === 404) {
+                return '';
+            }
+            if (!response.ok) {
+                throw new Error(getPublishErrorMessage(response.status, await readGitHubError(response)));
+            }
+            const data = await response.json();
+            return data.sha || '';
+        }
+
+        async function publishRosterOnline() {
+            const tokenInput = document.getElementById('githubTokenInput');
+            const token = tokenInput.value.trim();
+            if (!token) {
+                setAdminMessage('请输入 GitHub token 后再发布');
+                tokenInput.focus();
+                return;
+            }
+
+            normalizeRosterOrder();
+            const missing = getMissingRecords();
+            if (missing.length && !confirm(`${missing.length}条记录当前没有定位，发布后可能不会显示点位。仍然发布吗？`)) {
+                return;
+            }
+
+            setPublishBusy(true);
+            setAdminMessage('正在提交到 GitHub...');
+            try {
+                const sha = await getOnlineCsvSha(token);
+                const csv = getRosterCsv(true);
+                const body = {
+                    message: `Update class roster ${new Date().toISOString().slice(0, 10)}`,
+                    content: utf8ToBase64(csv),
+                    branch: GITHUB_PUBLISH_CONFIG.branch
+                };
+                if (sha) {
+                    body.sha = sha;
+                }
+
+                const response = await fetch(getGitHubContentsUrl(), {
+                    method: 'PUT',
+                    headers: {
+                        ...getGitHubHeaders(token),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (!response.ok) {
+                    throw new Error(getPublishErrorMessage(response.status, await readGitHubError(response)));
+                }
+
+                writeStoredRoster();
+                tokenInput.value = '';
+                setAdminMessage('已发布提交，GitHub Pages 正在部署。通常几十秒后，所有同学刷新页面就能看到。');
+            } catch (error) {
+                setAdminMessage(error.message || '发布失败，请检查网络后重试');
+            } finally {
+                setPublishBusy(false);
+            }
         }
 
         function resetRoster() {
