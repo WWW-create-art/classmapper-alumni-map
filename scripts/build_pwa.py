@@ -9,8 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_HTML = ROOT / "蹭饭地图结果" / "蹭饭地图.html"
+SOURCE_MAP_DATA = ROOT / "蹭饭地图结果" / "map-data.json"
+SOURCE_ROSTER = ROOT / "data" / "jielong.csv"
 WEB_APP = ROOT / "web-app"
 ICON_DIR = WEB_APP / "assets" / "icons"
+DATA_DIR = WEB_APP / "data"
 
 HEAD_SNIPPET = """    <meta name="theme-color" content="#1976d2">
     <meta name="mobile-web-app-capable" content="yes">
@@ -69,12 +72,15 @@ def main() -> None:
 
     WEB_APP.mkdir(exist_ok=True)
     ICON_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     html = SOURCE_HTML.read_text(encoding="utf-8")
     html = inject_once(html, "</head>", HEAD_SNIPPET, "manifest.webmanifest")
     html = inject_once(html, "</body>", BODY_SNIPPET, "serviceWorker")
     (WEB_APP / "index.html").write_text(html, encoding="utf-8")
     (WEB_APP / ".nojekyll").write_text("", encoding="utf-8")
+    shutil.copy2(SOURCE_MAP_DATA, DATA_DIR / "map-data.json")
+    shutil.copy2(SOURCE_ROSTER, DATA_DIR / "jielong.csv")
 
     write_manifest()
     write_service_worker()
@@ -123,7 +129,7 @@ def write_manifest() -> None:
 
 
 def write_service_worker() -> None:
-    sw = """const CACHE_NAME = 'classmapper-pwa-v13';
+    sw = """const CACHE_NAME = 'classmapper-pwa-v15';
 const LOCAL_ASSETS = [
   './',
   './index.html',
@@ -158,6 +164,11 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin || event.request.method !== 'GET') {
+    return;
+  }
+
+  if (url.pathname.endsWith('/data/jielong.csv') || url.pathname.endsWith('/data/map-data.json')) {
+    event.respondWith(fetch(new Request(event.request, { cache: 'reload' })));
     return;
   }
 

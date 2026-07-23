@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 
 ADMIN_PASSWORD_SHA256 = "11b2b0a25ddb34d735847de6b74cf2c904959656b7d42287fcd5bb33300483b9"
@@ -24,6 +25,15 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
     """生成可查看、可管理、可展开标注的蹭饭地图。"""
     html = HTML_TEMPLATE
     data_revision = get_data_revision(markers, roster or [], location_lookup or {})
+    map_payload = {
+        "center": center,
+        "zoom": 5,
+        "markers": markers,
+        "roster": roster or [],
+        "locationLookup": location_lookup or {},
+        "schoolAliases": SCHOOL_ALIASES,
+        "dataRevision": data_revision,
+    }
     replacements = {
         "__CENTER__": json.dumps(center),
         "__MARKERS__": json.dumps(markers, ensure_ascii=False),
@@ -41,6 +51,9 @@ def generate_html_template(center, markers, output_path, roster=None, location_l
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
+
+    data_path = Path(output_path).with_name("map-data.json")
+    data_path.write_text(json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     print(f"✅ 已生成优化版蹭饭地图: {output_path}")
     return output_path
@@ -838,8 +851,10 @@ HTML_TEMPLATE = r"""
         const ADMIN_PASSWORD_LEGACY_HASH = __ADMIN_PASSWORD_LEGACY_HASH__;
         const GITHUB_PUBLISH_CONFIG = __GITHUB_PUBLISH_CONFIG__;
         const DATA_REVISION = __DATA_REVISION__;
+        const ONLINE_MAP_DATA_URL = './data/map-data.json';
+        const ONLINE_ROSTER_URL = './data/jielong.csv';
 
-        const mapData = {
+        let mapData = {
             center: __CENTER__,
             zoom: 5,
             markers: __MARKERS__,
@@ -854,7 +869,7 @@ HTML_TEMPLATE = r"""
         let calloutLayer = null;
         let currentMode = 'points';
         let currentMarkers = [];
-        let roster = readStoredRoster() || getInitialRoster();
+        let roster = getInitialRoster();
         let lineFrame = 0;
 
         function getInitialRoster() {
@@ -876,34 +891,83 @@ HTML_TEMPLATE = r"""
         }
 
         function readStoredRoster() {
-            try {
-                const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) {
-                    return null;
-                }
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    return null;
-                }
-                if (!parsed || parsed.revision !== DATA_REVISION || !Array.isArray(parsed.records)) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    return null;
-                }
-                return parsed.records.map((record, index) => hydrateRecord(record, index + 1));
-            } catch (error) {
-                return null;
-            }
+            clearStoredRoster();
+            return null;
         }
 
         function writeStoredRoster() {
+            clearStoredRoster();
+        }
+
+        function clearStoredRoster() {
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    revision: DATA_REVISION,
-                    records: roster
-                }));
+                localStorage.removeItem(STORAGE_KEY);
             } catch (error) {
-                setAdminMessage('浏览器未保存本次修改');
+                // Ignore storage failures.
+            }
+        }
+
+        function getOnlineRosterUrl() {
+            return getFreshDataUrl(ONLINE_ROSTER_URL);
+        }
+
+        function getOnlineMapDataUrl() {
+            return getFreshDataUrl(ONLINE_MAP_DATA_URL);
+        }
+
+        function getFreshDataUrl(path) {
+            const url = new URL(path, window.location.href);
+            url.searchParams.set('v', String(Date.now()));
+            return url.href;
+        }
+
+        async function syncMapDataFromOnline() {
+            if (!['http:', 'https:'].includes(window.location.protocol)) {
+                return false;
+            }
+            try {
+                const response = await fetch(getOnlineMapDataUrl(), { cache: 'no-store' });
+                if (!response.ok) {
+                    return false;
+                }
+                const data = await response.json();
+                if (!data || !Array.isArray(data.roster) || !Array.isArray(data.markers) || !data.locationLookup) {
+                    return false;
+                }
+                mapData = {
+                    center: Array.isArray(data.center) ? data.center : mapData.center,
+                    zoom: Number(data.zoom) || mapData.zoom,
+                    markers: data.markers,
+                    roster: data.roster,
+                    locationLookup: data.locationLookup,
+                    schoolAliases: data.schoolAliases || mapData.schoolAliases
+                };
+                roster = getInitialRoster();
+                clearStoredRoster();
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function syncRosterFromOnline() {
+            if (!['http:', 'https:'].includes(window.location.protocol)) {
+                return false;
+            }
+            try {
+                const response = await fetch(getOnlineRosterUrl(), { cache: 'no-store' });
+                if (!response.ok) {
+                    return false;
+                }
+                const records = parseRosterCsv(await response.text());
+                if (!records.length) {
+                    return false;
+                }
+                roster = records.map((record, index) => hydrateRecord(record, index + 1));
+                clearStoredRoster();
+                return true;
+            } catch (error) {
+                return false;
             }
         }
 
@@ -1491,6 +1555,74 @@ HTML_TEMPLATE = r"""
             }
         }
 
+        function parseRosterCsv(text) {
+            const rows = parseCsvRows(text)
+                .map((row) => row.map((cell) => cell.trim()))
+                .filter((row) => row.some(Boolean));
+            if (!rows.length) {
+                return [];
+            }
+
+            const header = rows.shift();
+            const orderIndex = header.indexOf('序号');
+            const nameIndex = header.indexOf('姓名');
+            const schoolIndex = header.indexOf('学校');
+            if (nameIndex < 0 || schoolIndex < 0) {
+                return [];
+            }
+
+            return rows.map((row, index) => ({
+                order: orderIndex >= 0 ? Number(row[orderIndex]) || index + 1 : index + 1,
+                name: row[nameIndex] || '',
+                school: normalizeSchoolName(row[schoolIndex] || '')
+            })).filter((record) => record.name && record.school);
+        }
+
+        function parseCsvRows(text) {
+            const rows = [];
+            let row = [];
+            let cell = '';
+            let quoted = false;
+            const source = String(text || '').replace(/^\ufeff/, '');
+
+            for (let index = 0; index < source.length; index += 1) {
+                const char = source[index];
+                const next = source[index + 1];
+
+                if (quoted) {
+                    if (char === '"' && next === '"') {
+                        cell += '"';
+                        index += 1;
+                    } else if (char === '"') {
+                        quoted = false;
+                    } else {
+                        cell += char;
+                    }
+                    continue;
+                }
+
+                if (char === '"') {
+                    quoted = true;
+                } else if (char === ',') {
+                    row.push(cell);
+                    cell = '';
+                } else if (char === '\n') {
+                    row.push(cell);
+                    rows.push(row);
+                    row = [];
+                    cell = '';
+                } else if (char !== '\r') {
+                    cell += char;
+                }
+            }
+
+            row.push(cell);
+            if (row.length > 1 || row[0]) {
+                rows.push(row);
+            }
+            return rows;
+        }
+
         function parseRosterLine(line) {
             const trimmed = line.trim().replace(/^#?接龙\s*$/, '');
             if (!trimmed) {
@@ -1765,7 +1897,7 @@ HTML_TEMPLATE = r"""
             persistAndRender();
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             if (!document.getElementById('map-container')) {
                 document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h3>页面加载错误</h3><p>地图容器未创建</p></div>';
                 return;
@@ -1784,6 +1916,9 @@ HTML_TEMPLATE = r"""
                 }
             }, 10000);
 
+            if (!(await syncMapDataFromOnline())) {
+                await syncRosterFromOnline();
+            }
             initMap();
         });
     </script>

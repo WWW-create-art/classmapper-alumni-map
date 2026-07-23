@@ -787,8 +787,10 @@
         const ADMIN_PASSWORD_LEGACY_HASH = "7770de24";
         const GITHUB_PUBLISH_CONFIG = {"owner": "WWW-create-art", "repo": "classmapper-alumni-map", "branch": "main", "path": "data/jielong.csv"};
         const DATA_REVISION = "4cc54cbcef43a855";
+        const ONLINE_MAP_DATA_URL = './data/map-data.json';
+        const ONLINE_ROSTER_URL = './data/jielong.csv';
 
-        const mapData = {
+        let mapData = {
             center: [32.22546, 115.78489333333333],
             zoom: 5,
             markers: [{"lat": 32.0328, "lng": 118.8125, "title": "南京航空航天大学", "students": ["汤铭涵"], "address": "南京航空航天大学，南京市", "count": 1, "firstOrder": 1}, {"lat": 32.0584, "lng": 118.7965, "title": "南京大学", "students": ["叶璟晨"], "address": "南京大学，南京市", "count": 1, "firstOrder": 2}, {"lat": 31.0246, "lng": 121.4338, "title": "上海交通大学", "students": ["徐正昊"], "address": "上海交通大学，上海市", "count": 1, "firstOrder": 3}, {"lat": 39.7337, "lng": 116.161, "title": "中国社会科学院大学", "students": ["王若凡"], "address": "中国社会科学院大学，北京市", "count": 1, "firstOrder": 4}, {"lat": 30.3081, "lng": 120.0868, "title": "浙江大学", "students": ["王浩诚", "郑宇轩", "叶宇轩", "马少鹏", "邱心蕾", "陈荣灿", "景涵"], "address": "浙江大学，杭州市", "count": 7, "firstOrder": 5}, {"lat": 31.2988, "lng": 121.503, "title": "复旦大学", "students": ["林熙程", "金家乐"], "address": "复旦大学，上海市", "count": 2, "firstOrder": 6}, {"lat": 39.9828, "lng": 116.4277, "title": "对外经济贸易大学", "students": ["林浩喆"], "address": "对外经济贸易大学，北京市", "count": 1, "firstOrder": 8}, {"lat": 29.5743, "lng": 106.4681, "title": "重庆大学", "students": ["邱科宸"], "address": "重庆大学，重庆市", "count": 1, "firstOrder": 9}, {"lat": 28.179, "lng": 112.946, "title": "湖南大学", "students": ["余庆洋", "严梦佳"], "address": "湖南大学，长沙市", "count": 2, "firstOrder": 10}, {"lat": 34.1263, "lng": 108.8353, "title": "西安电子科技大学", "students": ["张萧逸"], "address": "西安电子科技大学，西安市", "count": 1, "firstOrder": 11}, {"lat": 30.6346, "lng": 104.0872, "title": "四川大学", "students": ["叶子睿", "吴智强", "童瑶"], "address": "四川大学，成都市", "count": 3, "firstOrder": 14}, {"lat": 39.9525, "lng": 116.4238, "title": "北京中医药大学", "students": ["吴士岐"], "address": "北京中医药大学，北京市", "count": 1, "firstOrder": 17}, {"lat": 23.0962, "lng": 113.2988, "title": "中山大学", "students": ["木子元元"], "address": "中山大学，广州市", "count": 1, "firstOrder": 21}, {"lat": 30.151, "lng": 120.0909, "title": "浙江警察学院", "students": ["金俊豪"], "address": "浙江警察学院，杭州市", "count": 1, "firstOrder": 24}, {"lat": 31.2288, "lng": 121.402, "title": "华东师范大学", "students": ["王竣民"], "address": "华东师范大学，上海市", "count": 1, "firstOrder": 25}],
@@ -803,7 +805,7 @@
         let calloutLayer = null;
         let currentMode = 'points';
         let currentMarkers = [];
-        let roster = readStoredRoster() || getInitialRoster();
+        let roster = getInitialRoster();
         let lineFrame = 0;
 
         function getInitialRoster() {
@@ -825,34 +827,83 @@
         }
 
         function readStoredRoster() {
-            try {
-                const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) {
-                    return null;
-                }
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    return null;
-                }
-                if (!parsed || parsed.revision !== DATA_REVISION || !Array.isArray(parsed.records)) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    return null;
-                }
-                return parsed.records.map((record, index) => hydrateRecord(record, index + 1));
-            } catch (error) {
-                return null;
-            }
+            clearStoredRoster();
+            return null;
         }
 
         function writeStoredRoster() {
+            clearStoredRoster();
+        }
+
+        function clearStoredRoster() {
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    revision: DATA_REVISION,
-                    records: roster
-                }));
+                localStorage.removeItem(STORAGE_KEY);
             } catch (error) {
-                setAdminMessage('浏览器未保存本次修改');
+                // Ignore storage failures.
+            }
+        }
+
+        function getOnlineRosterUrl() {
+            return getFreshDataUrl(ONLINE_ROSTER_URL);
+        }
+
+        function getOnlineMapDataUrl() {
+            return getFreshDataUrl(ONLINE_MAP_DATA_URL);
+        }
+
+        function getFreshDataUrl(path) {
+            const url = new URL(path, window.location.href);
+            url.searchParams.set('v', String(Date.now()));
+            return url.href;
+        }
+
+        async function syncMapDataFromOnline() {
+            if (!['http:', 'https:'].includes(window.location.protocol)) {
+                return false;
+            }
+            try {
+                const response = await fetch(getOnlineMapDataUrl(), { cache: 'no-store' });
+                if (!response.ok) {
+                    return false;
+                }
+                const data = await response.json();
+                if (!data || !Array.isArray(data.roster) || !Array.isArray(data.markers) || !data.locationLookup) {
+                    return false;
+                }
+                mapData = {
+                    center: Array.isArray(data.center) ? data.center : mapData.center,
+                    zoom: Number(data.zoom) || mapData.zoom,
+                    markers: data.markers,
+                    roster: data.roster,
+                    locationLookup: data.locationLookup,
+                    schoolAliases: data.schoolAliases || mapData.schoolAliases
+                };
+                roster = getInitialRoster();
+                clearStoredRoster();
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function syncRosterFromOnline() {
+            if (!['http:', 'https:'].includes(window.location.protocol)) {
+                return false;
+            }
+            try {
+                const response = await fetch(getOnlineRosterUrl(), { cache: 'no-store' });
+                if (!response.ok) {
+                    return false;
+                }
+                const records = parseRosterCsv(await response.text());
+                if (!records.length) {
+                    return false;
+                }
+                roster = records.map((record, index) => hydrateRecord(record, index + 1));
+                clearStoredRoster();
+                return true;
+            } catch (error) {
+                return false;
             }
         }
 
@@ -1440,6 +1491,74 @@
             }
         }
 
+        function parseRosterCsv(text) {
+            const rows = parseCsvRows(text)
+                .map((row) => row.map((cell) => cell.trim()))
+                .filter((row) => row.some(Boolean));
+            if (!rows.length) {
+                return [];
+            }
+
+            const header = rows.shift();
+            const orderIndex = header.indexOf('序号');
+            const nameIndex = header.indexOf('姓名');
+            const schoolIndex = header.indexOf('学校');
+            if (nameIndex < 0 || schoolIndex < 0) {
+                return [];
+            }
+
+            return rows.map((row, index) => ({
+                order: orderIndex >= 0 ? Number(row[orderIndex]) || index + 1 : index + 1,
+                name: row[nameIndex] || '',
+                school: normalizeSchoolName(row[schoolIndex] || '')
+            })).filter((record) => record.name && record.school);
+        }
+
+        function parseCsvRows(text) {
+            const rows = [];
+            let row = [];
+            let cell = '';
+            let quoted = false;
+            const source = String(text || '').replace(/^\ufeff/, '');
+
+            for (let index = 0; index < source.length; index += 1) {
+                const char = source[index];
+                const next = source[index + 1];
+
+                if (quoted) {
+                    if (char === '"' && next === '"') {
+                        cell += '"';
+                        index += 1;
+                    } else if (char === '"') {
+                        quoted = false;
+                    } else {
+                        cell += char;
+                    }
+                    continue;
+                }
+
+                if (char === '"') {
+                    quoted = true;
+                } else if (char === ',') {
+                    row.push(cell);
+                    cell = '';
+                } else if (char === '\n') {
+                    row.push(cell);
+                    rows.push(row);
+                    row = [];
+                    cell = '';
+                } else if (char !== '\r') {
+                    cell += char;
+                }
+            }
+
+            row.push(cell);
+            if (row.length > 1 || row[0]) {
+                rows.push(row);
+            }
+            return rows;
+        }
+
         function parseRosterLine(line) {
             const trimmed = line.trim().replace(/^#?接龙\s*$/, '');
             if (!trimmed) {
@@ -1714,7 +1833,7 @@
             persistAndRender();
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             if (!document.getElementById('map-container')) {
                 document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h3>页面加载错误</h3><p>地图容器未创建</p></div>';
                 return;
@@ -1733,6 +1852,9 @@
                 }
             }, 10000);
 
+            if (!(await syncMapDataFromOnline())) {
+                await syncRosterFromOnline();
+            }
             initMap();
         });
     </script>

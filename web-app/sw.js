@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classmapper-pwa-v13';
+const CACHE_NAME = 'classmapper-pwa-v15';
 const LOCAL_ASSETS = [
   './',
   './index.html',
@@ -33,6 +33,11 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin || event.request.method !== 'GET') {
+    return;
+  }
+
+  if (url.pathname.endsWith('/data/jielong.csv') || url.pathname.endsWith('/data/map-data.json')) {
+    event.respondWith(fetch(new Request(event.request, { cache: 'reload' })));
     return;
   }
 
