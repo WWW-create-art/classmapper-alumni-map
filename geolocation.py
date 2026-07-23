@@ -1,7 +1,13 @@
 import json
 import os
 import re
-from geopy.geocoders import Nominatim
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+try:
+    from geopy.geocoders import Nominatim
+except ImportError:
+    Nominatim = None
 
 
 KNOWN_LOCATIONS = {
@@ -105,8 +111,6 @@ def get_school_location(school_name, cache):
     if school_name in cache:
         return cache[school_name]
     
-    # 使用OpenStreetMap API
-    geolocator = Nominatim(user_agent="cengfan_map_app")
     location = None
     city = "未知"
     coords = (0, 0)
@@ -121,7 +125,7 @@ def get_school_location(school_name, cache):
     
     for query in queries:
         try:
-            location = geolocator.geocode(query, country_codes='cn', timeout=10)
+            location = geocode_query(query)
             if location:
                 break
         except Exception as e:
@@ -141,6 +145,40 @@ def get_school_location(school_name, cache):
     result = {"city": city, "coords": coords, "address": address}
     cache[school_name] = result
     return result
+
+
+def geocode_query(query):
+    if Nominatim is not None:
+        geolocator = Nominatim(user_agent="cengfan_map_app")
+        return geolocator.geocode(query, country_codes="cn", timeout=10)
+
+    params = urlencode({
+        "q": query,
+        "format": "json",
+        "limit": 1,
+        "countrycodes": "cn",
+        "accept-language": "zh-CN",
+    })
+    request = Request(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": "cengfan_map_app"},
+    )
+    with urlopen(request, timeout=10) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    if not data:
+        return None
+    return SimpleLocation(
+        float(data[0]["lat"]),
+        float(data[0]["lon"]),
+        data[0].get("display_name", ""),
+    )
+
+
+class SimpleLocation:
+    def __init__(self, latitude, longitude, address):
+        self.latitude = latitude
+        self.longitude = longitude
+        self.address = address
 
 
 def extract_city_name(address):

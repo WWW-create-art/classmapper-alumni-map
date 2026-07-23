@@ -46,16 +46,16 @@
 如果希望网页里“发布到线上”后国内版本也自动更新，就把 EdgeOne 项目连接到这个 GitHub 仓库，并配置构建：
 
 ```text
-Install Command: python -m pip install -r requirements.txt
-Build Command: python main.py data/jielong.csv --no-open --map-only && python scripts/build_pwa.py
+Install Command: python3 --version
+Build Command: python3 scripts/build_edgeone.py data/jielong.csv && python3 scripts/build_pwa.py
 Output Directory: web-app
 ```
 
-仓库里已经提供 `edgeone.json`，EdgeOne 如果自动读取配置，就按仓库配置即可。为了让构建更快，`edgeone.json` 只安装地图生成必需的轻量依赖：
+仓库里已经提供 `edgeone.json`，EdgeOne 如果自动读取配置，就按仓库配置即可。为了避开云端构建环境里的 Python 2.7 和 pip 权限问题，`edgeone.json` 使用零依赖构建脚本：
 
 ```text
-Install Command: python -m pip install pandas numpy geopy tqdm
-Build Command: python main.py data/jielong.csv --no-open --map-only && python scripts/build_pwa.py
+Install Command: python3 --version
+Build Command: python3 scripts/build_edgeone.py data/jielong.csv && python3 scripts/build_pwa.py
 Output Directory: web-app
 ```
 
