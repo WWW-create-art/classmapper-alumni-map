@@ -80,7 +80,7 @@ def main() -> None:
 
     html = SOURCE_HTML.read_text(encoding="utf-8")
     html = inject_once(html, "</head>", HEAD_SNIPPET, "manifest.webmanifest")
-    html = inject_once(html, "</body>", BODY_SNIPPET, "serviceWorker")
+    html = inject_once(html, "</body>", BODY_SNIPPET, "navigator.serviceWorker.register('./sw.js')")
     (WEB_APP / "index.html").write_text(html, encoding="utf-8")
     (WEB_APP / ".nojekyll").write_text("", encoding="utf-8")
     shutil.copy2(SOURCE_MAP_DATA, DATA_DIR / "map-data.json")

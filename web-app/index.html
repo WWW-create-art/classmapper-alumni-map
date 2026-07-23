@@ -58,7 +58,7 @@
             left: 12px;
             z-index: 1001;
             display: grid;
-            width: 48px;
+            width: 58px;
             border: 1px solid rgba(0, 0, 0, 0.18);
             border-radius: 4px;
             background: rgba(255, 255, 255, 0.96);
@@ -488,6 +488,7 @@
         <button type="button" id="pointModeBtn" aria-pressed="true">点位</button>
         <button type="button" id="calloutModeBtn" aria-pressed="false">展开</button>
         <button type="button" id="adminToggleBtn" aria-pressed="false">管理</button>
+        <button type="button" id="viewerDocBtn" aria-label="生成同学版文档" title="生成同学版文档">文档</button>
     </div>
     <div id="map-container">
         <div id="map"></div>
@@ -1187,6 +1188,7 @@
             bindClick('publishOnlineBtn', publishRosterOnline);
             bindClick('resetRosterBtn', resetRoster);
             bindClick('recordList', handleRecordAction);
+            bindClick('viewerDocBtn', downloadViewerDocument);
             document.getElementById('calloutPanel').addEventListener('scroll', scheduleCalloutLines);
             renderSchoolOptions();
             updateAdminUi();
@@ -1270,6 +1272,10 @@
             const adminToggle = document.getElementById('adminToggleBtn');
             if (adminToggle) {
                 adminToggle.setAttribute('aria-pressed', String(adminOpen));
+            }
+            const viewerDocBtn = document.getElementById('viewerDocBtn');
+            if (viewerDocBtn) {
+                viewerDocBtn.setAttribute('aria-pressed', 'false');
             }
         }
 
@@ -1699,6 +1705,219 @@
             const anchor = document.createElement('a');
             anchor.href = url;
             anchor.download = 'jielong-updated.csv';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        async function downloadViewerDocument() {
+            try {
+                setAdminMessage('正在生成同学版文档...');
+                const html = await buildViewerDocumentHtml();
+                downloadTextFile('同学蹭饭地图-同学版.html', html, 'text/html;charset=utf-8');
+                setAdminMessage('已生成同学版文档，可直接发给同学');
+            } catch (error) {
+                const message = error && error.message ? error.message : '生成失败';
+                setAdminMessage(message);
+                alert(message);
+            }
+        }
+
+        async function buildViewerDocumentHtml() {
+            normalizeRosterOrder();
+            const viewerData = getViewerMapData();
+            const doc = document.implementation.createHTMLDocument('同学蹭饭地图');
+            doc.documentElement.innerHTML = document.documentElement.innerHTML;
+
+            const toolbar = doc.querySelector('.toolbar');
+            if (toolbar) {
+                toolbar.querySelector('#adminToggleBtn')?.remove();
+                toolbar.querySelector('#viewerDocBtn')?.remove();
+            }
+
+            doc.getElementById('adminPanel')?.remove();
+            const installPanelId = 'pwa' + 'InstallPanel';
+            const serviceWorkerSignature = 'service' + 'Worker.register';
+            doc.getElementById(installPanelId)?.remove();
+            doc.querySelector('link[rel="manifest"]')?.remove();
+            doc.querySelector('link[rel="apple-touch-icon"]')?.remove();
+
+            const mapContainer = doc.getElementById('map-container');
+            if (mapContainer) {
+                mapContainer.innerHTML = `
+                    <div id="map"></div>
+                    <svg class="callout-lines" id="calloutLines" aria-hidden="true" hidden></svg>
+                    <aside class="callout-panel" id="calloutPanel" hidden>
+                        <h2>全部点位</h2>
+                        <div class="callout-list" id="calloutList"></div>
+                    </aside>
+                    <div class="loading-overlay" id="loadingOverlay">
+                        <div class="loading-spinner"></div>
+                        <p>正在加载地图...</p>
+                        <p style="font-size:12px;color:#777;margin-top:10px;">若长时间未加载，请检查网络连接</p>
+                        <button class="retry-btn" onclick="initMap()">重新加载</button>
+                    </div>
+                `;
+            }
+
+            doc.querySelectorAll('script:not([src])').forEach((script) => {
+                const text = script.textContent || '';
+                if (text.includes(installPanelId) || text.includes(serviceWorkerSignature)) {
+                    script.remove();
+                }
+            });
+
+            const appScript = Array.from(doc.querySelectorAll('script:not([src])'))
+                .find((script) => (script.textContent || '').includes('let mapData =') && (script.textContent || '').includes('function initMap'));
+            if (!appScript) {
+                throw new Error('没有找到地图脚本，无法生成文档');
+            }
+            appScript.textContent = patchViewerScript(appScript.textContent || '', viewerData);
+
+            let html = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+            html = await inlineViewerLeaflet(html);
+            return html;
+        }
+
+        function getViewerMapData() {
+            const hydratedRoster = roster.map((record, index) => hydrateRecord(record, index + 1));
+            const locationLookup = { ...(mapData.locationLookup || {}) };
+            hydratedRoster.forEach((record) => {
+                if (!record.school || !Number.isFinite(record.lat) || !Number.isFinite(record.lng)) {
+                    return;
+                }
+                locationLookup[record.school] = {
+                    city: record.city || '',
+                    coords: [record.lat, record.lng],
+                    address: record.address || record.school
+                };
+            });
+            const markers = buildMarkersFromRoster(hydratedRoster);
+            return {
+                center: calculateViewerCenter(markers),
+                zoom: mapData.zoom || 5,
+                markers: markers,
+                roster: hydratedRoster,
+                locationLookup: locationLookup,
+                schoolAliases: mapData.schoolAliases || {},
+                dataRevision: `viewer-${Date.now()}`
+            };
+        }
+
+        function calculateViewerCenter(markers) {
+            const coords = markers
+                .filter((loc) => Number.isFinite(loc.lat) && Number.isFinite(loc.lng))
+                .map((loc) => [loc.lat, loc.lng]);
+            if (!coords.length) {
+                return mapData.center || [35.8617, 104.1954];
+            }
+            return [
+                coords.reduce((sum, coord) => sum + coord[0], 0) / coords.length,
+                coords.reduce((sum, coord) => sum + coord[1], 0) / coords.length
+            ];
+        }
+
+        function patchViewerScript(source, viewerData) {
+            let next = source
+                .replace(/\n\s*const ADMIN_KEY = 'classmapper-admin-v1';/, '')
+                .replace(/\n\s*const ADMIN_PASSWORD_SHA256 = .*?;/, '')
+                .replace(/\n\s*const ADMIN_PASSWORD_LEGACY_HASH = .*?;/, '')
+                .replace(/\n\s*const GITHUB_PUBLISH_CONFIG = .*?;/, '')
+                .replace(/const DATA_REVISION = .*?;/, `const DATA_REVISION = ${JSON.stringify(viewerData.dataRevision)};`)
+                .replace(
+                    /let mapData = \{[\s\S]*?\n\s*\};\n\n\s*let map = null;/,
+                    `let mapData = ${safeJsonForScript(viewerData)};\n\n        let map = null;`
+                );
+
+            [
+                "adminToggleBtn",
+                "closeAdminBtn",
+                "loginForm",
+                "lockAdminBtn",
+                "recordForm",
+                "clearEditBtn",
+                "nameInput",
+                "appendImportBtn",
+                "replaceImportBtn",
+                "exportCsvBtn",
+                "publishOnlineBtn",
+                "resetRosterBtn",
+                "recordList",
+                "viewerDocBtn"
+            ].forEach((id) => {
+                next = next.replace(new RegExp(`\\n\\s*bind(?:Click|Submit|Input)\\('${id}'[\\s\\S]*?\\);`, 'm'), '');
+            });
+            next = next
+                .replace(/\n\s*renderSchoolOptions\(\);/, '')
+                .replace(/\n\s*updateAdminUi\(\);/, '')
+                .replace(/\n\s*renderAdminList\(\);/g, '')
+                .replace(/\n\s*setAdminMessage\(getRosterSummary\(\)\);/g, '');
+            return next;
+        }
+
+        function safeJsonForScript(value) {
+            return JSON.stringify(value)
+                .replace(/</g, '\\u003c')
+                .replace(/>/g, '\\u003e')
+                .replace(/&/g, '\\u0026');
+        }
+
+        async function inlineViewerLeaflet(html) {
+            const css = await inlineCssAssetUrls(await fetchTextAsset('./assets/vendor/leaflet/leaflet.min.css'), './assets/vendor/leaflet/');
+            const js = (await fetchTextAsset('./assets/vendor/leaflet/leaflet.min.js')).replace(new RegExp('<' + '/script', 'gi'), '<\\/script');
+            const scriptClose = '<' + '/script>';
+            return html
+                .replace(/\s*<link rel="stylesheet" href="\.\/assets\/vendor\/leaflet\/leaflet\.min\.css" \/>/, `\n    <style>\n${css}\n    </style>`)
+                .replace(/\s*<script src="\.\/assets\/vendor\/leaflet\/leaflet\.min\.js"><\/script>/, `\n    <script>\n${js}\n    ${scriptClose}`);
+        }
+
+        async function inlineCssAssetUrls(css, basePath) {
+            const matches = Array.from(css.matchAll(/url\(([^)]+)\)/g));
+            let next = css;
+            for (const match of matches) {
+                const rawPath = match[1].trim().replace(/^['"]|['"]$/g, '');
+                if (!rawPath || /^(data:|https?:|#)/i.test(rawPath)) {
+                    continue;
+                }
+                try {
+                    const dataUrl = await fetchDataUrlAsset(basePath + rawPath);
+                    next = next.replace(match[0], `url(${dataUrl})`);
+                } catch (error) {
+                    // These Leaflet layer icons are not used by this map, so leaving them linked is harmless.
+                }
+            }
+            return next;
+        }
+
+        async function fetchTextAsset(path) {
+            const response = await fetch(new URL(path, window.location.href).href, { cache: 'force-cache' });
+            if (!response.ok) {
+                throw new Error('生成文档失败：无法读取地图资源，请从线上页面重试');
+            }
+            return response.text();
+        }
+
+        async function fetchDataUrlAsset(path) {
+            const response = await fetch(new URL(path, window.location.href).href, { cache: 'force-cache' });
+            if (!response.ok) {
+                throw new Error('asset not found');
+            }
+            const blob = await response.blob();
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function downloadTextFile(filename, text, type) {
+            const blob = new Blob([text], { type: type || 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = filename;
             document.body.appendChild(anchor);
             anchor.click();
             anchor.remove();

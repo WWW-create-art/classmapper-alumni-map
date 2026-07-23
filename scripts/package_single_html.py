@@ -29,6 +29,7 @@ def make_viewer_only(html: str) -> str:
         html,
         count=1,
     )
+    html = re.sub(r'\s*<button[^>]*id="viewerDocBtn"[^>]*>文档</button>', "", html, count=1)
     html = re.sub(
         r'\s*<section class="admin-panel" id="adminPanel" hidden>[\s\S]*?</section>',
         "",
@@ -51,6 +52,8 @@ def remove_inline_scripts_containing(html: str, needles: list[str]) -> str:
 
     def replace(match: re.Match[str]) -> str:
         block = match.group(0)
+        if "let mapData =" in block and "function initMap" in block:
+            return block
         if any(needle in block for needle in needles):
             return ""
         return block
@@ -78,6 +81,7 @@ def strip_admin_javascript(html: str) -> str:
         r"\n\s*bindClick\('publishOnlineBtn', publishRosterOnline\);",
         r"\n\s*bindClick\('resetRosterBtn', resetRoster\);",
         r"\n\s*bindClick\('recordList', handleRecordAction\);",
+        r"\n\s*bindClick\('viewerDocBtn', downloadViewerDocument\);",
         r"\n\s*renderSchoolOptions\(\);",
         r"\n\s*updateAdminUi\(\);",
     ]
