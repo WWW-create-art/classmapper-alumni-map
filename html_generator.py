@@ -1242,26 +1242,47 @@ HTML_TEMPLATE = r"""
             document.getElementById('calloutModeBtn').addEventListener('click', function() {
                 setMode('callouts');
             });
-            document.getElementById('adminToggleBtn').addEventListener('click', toggleAdminPanel);
-            document.getElementById('closeAdminBtn').addEventListener('click', closeAdminPanel);
-            document.getElementById('loginForm').addEventListener('submit', handleLogin);
-            document.getElementById('lockAdminBtn').addEventListener('click', lockAdmin);
-            document.getElementById('recordForm').addEventListener('submit', saveRecord);
-            document.getElementById('clearEditBtn').addEventListener('click', clearEditForm);
-            document.getElementById('nameInput').addEventListener('input', updateNamePrivacyPreview);
-            document.getElementById('appendImportBtn').addEventListener('click', function() {
+            bindClick('adminToggleBtn', toggleAdminPanel);
+            bindClick('closeAdminBtn', closeAdminPanel);
+            bindSubmit('loginForm', handleLogin);
+            bindClick('lockAdminBtn', lockAdmin);
+            bindSubmit('recordForm', saveRecord);
+            bindClick('clearEditBtn', clearEditForm);
+            bindInput('nameInput', updateNamePrivacyPreview);
+            bindClick('appendImportBtn', function() {
                 importRoster(false);
             });
-            document.getElementById('replaceImportBtn').addEventListener('click', function() {
+            bindClick('replaceImportBtn', function() {
                 importRoster(true);
             });
-            document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
-            document.getElementById('publishOnlineBtn').addEventListener('click', publishRosterOnline);
-            document.getElementById('resetRosterBtn').addEventListener('click', resetRoster);
-            document.getElementById('recordList').addEventListener('click', handleRecordAction);
+            bindClick('exportCsvBtn', exportCsv);
+            bindClick('publishOnlineBtn', publishRosterOnline);
+            bindClick('resetRosterBtn', resetRoster);
+            bindClick('recordList', handleRecordAction);
             document.getElementById('calloutPanel').addEventListener('scroll', scheduleCalloutLines);
             renderSchoolOptions();
             updateAdminUi();
+        }
+
+        function bindClick(id, handler) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('click', handler);
+            }
+        }
+
+        function bindSubmit(id, handler) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('submit', handler);
+            }
+        }
+
+        function bindInput(id, handler) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('input', handler);
+            }
         }
 
         function renderAll() {
@@ -1305,16 +1326,23 @@ HTML_TEMPLATE = r"""
 
         function setMode(mode) {
             currentMode = mode;
-            document.getElementById('adminPanel').hidden = true;
+            const adminPanel = document.getElementById('adminPanel');
+            if (adminPanel) {
+                adminPanel.hidden = true;
+            }
             updateToolbarState();
             renderLayers();
         }
 
         function updateToolbarState() {
-            const adminOpen = !document.getElementById('adminPanel').hidden;
+            const adminPanel = document.getElementById('adminPanel');
+            const adminOpen = !!adminPanel && !adminPanel.hidden;
             document.getElementById('pointModeBtn').setAttribute('aria-pressed', String(!adminOpen && currentMode === 'points'));
             document.getElementById('calloutModeBtn').setAttribute('aria-pressed', String(!adminOpen && currentMode === 'callouts'));
-            document.getElementById('adminToggleBtn').setAttribute('aria-pressed', String(adminOpen));
+            const adminToggle = document.getElementById('adminToggleBtn');
+            if (adminToggle) {
+                adminToggle.setAttribute('aria-pressed', String(adminOpen));
+            }
         }
 
         function updateTitle() {
@@ -1482,6 +1510,9 @@ HTML_TEMPLATE = r"""
         }
 
         function updateAdminUi() {
+            if (!document.getElementById('loginForm') || !document.getElementById('adminEditor')) {
+                return;
+            }
             const unlocked = hasAdminSession();
             document.getElementById('loginForm').hidden = unlocked;
             document.getElementById('adminEditor').hidden = !unlocked;

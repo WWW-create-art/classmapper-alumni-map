@@ -41,6 +41,18 @@
 
 这个方案通常不需要买域名，也不需要先备案；缺点是管理员每次改完名单后，需要重新上传一次压缩包。
 
+### 方案 A2：短期发给同学，最省事
+
+如果不走线上托管，只是短期发给同学看，生成同学版单文件：
+
+```bash
+python3 scripts/build_edgeone.py data/jielong.csv
+python3 scripts/build_pwa.py
+python3 scripts/package_single_html.py
+```
+
+生成文件在 `dist/同学蹭饭地图-同学版.html`。这个版本只保留点位、展开和高德地图跳转，不显示管理入口，不需要解压资源目录。
+
 ### 方案 B：接 Git 部署，后续自动更新
 
 如果希望网页里“发布到线上”后国内版本也自动更新，就把 EdgeOne 项目连接到这个 GitHub 仓库，并配置构建：
