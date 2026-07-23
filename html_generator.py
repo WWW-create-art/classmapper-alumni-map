@@ -497,7 +497,7 @@ HTML_TEMPLATE = r"""
         .pwa-install-panel__actions {
             flex: 0 0 auto;
             display: grid;
-            grid-template-columns: 1fr 1fr 34px;
+            grid-template-columns: 1fr 34px;
             gap: 6px;
         }
         .pwa-install-panel button {
@@ -547,7 +547,7 @@ HTML_TEMPLATE = r"""
                 grid-template-columns: 1fr;
             }
             .pwa-install-panel__actions {
-                grid-template-columns: 1fr 1fr 34px;
+                grid-template-columns: 1fr 34px;
             }
         }
     </style>
@@ -628,12 +628,11 @@ HTML_TEMPLATE = r"""
 
     <div id="pwaInstallPanel" class="pwa-install-panel" role="dialog" aria-live="polite" aria-label="全屏打开">
         <span class="pwa-install-panel__copy">
-            <strong class="pwa-install-panel__title">全屏 / 添加到桌面</strong>
-            <span class="pwa-install-panel__note" id="pwaInstallNote">点全屏可临时隐藏浏览器栏；要出现在桌面，请添加到主屏幕或创建快捷方式。</span>
+            <strong class="pwa-install-panel__title">全屏打开</strong>
+            <span class="pwa-install-panel__note" id="pwaInstallNote">点全屏可临时隐藏浏览器栏。</span>
         </span>
         <span class="pwa-install-panel__actions">
-            <button type="button" id="pwaInstallBtn">添加到桌面</button>
-            <button type="button" id="pwaFullscreenBtn" class="secondary">全屏</button>
+            <button type="button" id="pwaFullscreenBtn">全屏</button>
             <button type="button" id="pwaDismissBtn" class="close" aria-label="关闭">×</button>
         </span>
     </div>
@@ -641,17 +640,12 @@ HTML_TEMPLATE = r"""
     <script>
         (function() {
             var panel = document.getElementById('pwaInstallPanel');
-            var installBtn = document.getElementById('pwaInstallBtn');
             var fullscreenBtn = document.getElementById('pwaFullscreenBtn');
             var dismissBtn = document.getElementById('pwaDismissBtn');
             var note = document.getElementById('pwaInstallNote');
-            var deferredInstallPrompt = null;
             var dismissedKey = 'classmapper-pwa-install-dismissed';
-            var isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            var isAndroid = /Android/i.test(navigator.userAgent);
             var restoreTimer = 0;
             var wasScreenLike = false;
-            var shortcutHelpOpen = false;
 
             function isAppMode() {
                 return window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -699,16 +693,6 @@ HTML_TEMPLATE = r"""
                 }
             }
 
-            function getShortcutHelpText() {
-                if (isiOS) {
-                    return '在 Safari 里点分享按钮，再选“添加到主屏幕”。';
-                }
-                if (isAndroid) {
-                    return '点浏览器右上角菜单，选择“安装应用”“添加到主屏幕”或“创建快捷方式”。';
-                }
-                return '点浏览器菜单，选择“安装应用”或“创建快捷方式”。';
-            }
-
             function updatePanel(reason) {
                 var restoring = reason === 'restore';
                 if (!panel || isAppMode() || isFullscreenActive() || (!restoring && isInitialPromptDismissed())) {
@@ -717,30 +701,14 @@ HTML_TEMPLATE = r"""
                     }
                     return;
                 }
-                if (!restoring && !isAndroid && !isiOS && !deferredInstallPrompt) {
-                    return;
-                }
-                if (restoring && !canRequestFullscreen()) {
+                if (!canRequestFullscreen()) {
                     return;
                 }
 
-                installBtn.style.display = '';
                 fullscreenBtn.style.display = '';
-                if (!panel.classList.contains('is-visible')) {
-                    shortcutHelpOpen = false;
-                }
-                installBtn.textContent = deferredInstallPrompt ? '添加到桌面' : '创建快捷方式';
                 note.textContent = restoring
-                    ? '刚刚退出了全屏，点“全屏”可回去；想有桌面图标，请创建快捷方式。'
-                    : '点全屏可临时隐藏浏览器栏；要出现在桌面，请添加到主屏幕或创建快捷方式。';
-                if (isiOS && !deferredInstallPrompt) {
-                    note.textContent = getShortcutHelpText();
-                } else if (!deferredInstallPrompt && !isAndroid && !isiOS) {
-                    installBtn.style.display = 'none';
-                }
-                if (!canRequestFullscreen()) {
-                    fullscreenBtn.style.display = 'none';
-                }
+                    ? '刚刚退出了全屏，点“全屏”可回去。'
+                    : '点全屏可临时隐藏浏览器栏。';
                 panel.classList.add('is-visible');
             }
 
@@ -758,12 +726,6 @@ HTML_TEMPLATE = r"""
                 }
                 wasScreenLike = screenLike;
             }
-
-            window.addEventListener('beforeinstallprompt', function(event) {
-                event.preventDefault();
-                deferredInstallPrompt = event;
-                updatePanel();
-            });
 
             document.addEventListener('fullscreenchange', function() {
                 if (isFullscreenActive()) {
@@ -802,27 +764,6 @@ HTML_TEMPLATE = r"""
                     schedulePanelUpdate();
                 }
             });
-
-            if (installBtn) {
-                installBtn.addEventListener('click', function() {
-                    if (deferredInstallPrompt) {
-                        deferredInstallPrompt.prompt();
-                        deferredInstallPrompt.userChoice.finally(function() {
-                            deferredInstallPrompt = null;
-                            panel.classList.remove('is-visible');
-                        });
-                    } else {
-                        if (shortcutHelpOpen) {
-                            dismissInitialPrompt();
-                            panel.classList.remove('is-visible');
-                        } else {
-                            shortcutHelpOpen = true;
-                            note.textContent = getShortcutHelpText();
-                            installBtn.textContent = '知道了';
-                        }
-                    }
-                });
-            }
 
             if (fullscreenBtn) {
                 fullscreenBtn.addEventListener('click', function() {
