@@ -577,7 +577,7 @@ HTML_TEMPLATE = r"""
                     <div class="admin-actions">
                         <button class="primary-btn" type="button" id="publishOnlineBtn">发布到线上</button>
                     </div>
-                    <p class="publish-hint">需要 token 有这个仓库的 Contents 读写权限；发布后 GitHub Pages 通常几十秒内完成部署。</p>
+                    <p class="publish-hint">新学校会在发布时自动尝试定位；需要 token 有这个仓库的 Contents 读写权限。</p>
                 </div>
                 <p class="status-text" id="adminMessage"></p>
                 <div class="record-list" id="recordList"></div>
@@ -1689,7 +1689,7 @@ HTML_TEMPLATE = r"""
 
             normalizeRosterOrder();
             const missing = getMissingRecords();
-            if (missing.length && !confirm(`${missing.length}条记录当前没有定位，发布后可能不会显示点位。仍然发布吗？`)) {
+            if (missing.length && !confirm(`${missing.length}条记录当前页面暂时没有定位。发布后会自动尝试定位新学校；如果定位失败才不会显示点位。继续发布吗？`)) {
                 return;
             }
 
