@@ -36,13 +36,7 @@ def make_viewer_only(html: str) -> str:
         html,
         count=1,
     )
-    html = re.sub(
-        r'\s*<div id="pwaInstallPanel" class="pwa-install-panel"[\s\S]*?</div>\s*(?=<script>)',
-        "",
-        html,
-        count=1,
-    )
-    html = remove_inline_scripts_containing(html, ["pwaInstallPanel", "serviceWorker.register"])
+    html = remove_inline_scripts_containing(html, ["serviceWorker.register"])
     html = strip_admin_javascript(html)
     return html
 

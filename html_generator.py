@@ -1813,9 +1813,7 @@ HTML_TEMPLATE = r"""
             }
 
             doc.getElementById('adminPanel')?.remove();
-            const installPanelId = 'pwa' + 'InstallPanel';
             const serviceWorkerSignature = 'service' + 'Worker.register';
-            doc.getElementById(installPanelId)?.remove();
             doc.querySelector('link[rel="manifest"]')?.remove();
             doc.querySelector('link[rel="apple-touch-icon"]')?.remove();
 
@@ -1839,7 +1837,7 @@ HTML_TEMPLATE = r"""
 
             doc.querySelectorAll('script:not([src])').forEach((script) => {
                 const text = script.textContent || '';
-                if (text.includes(installPanelId) || text.includes(serviceWorkerSignature)) {
+                if (text.includes(serviceWorkerSignature)) {
                     script.remove();
                 }
             });
