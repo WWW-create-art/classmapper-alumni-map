@@ -939,10 +939,7 @@ HTML_TEMPLATE = r"""
         }
 
         function getPrivacyHintHtml() {
-            if (canShowFullNames()) {
-                return '';
-            }
-            return '<p class="privacy-hint">已隐藏完整姓名，管理员解锁后可查看。</p>';
+            return '';
         }
 
         function escapeHtml(value) {
