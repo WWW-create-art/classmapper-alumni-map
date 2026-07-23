@@ -372,9 +372,102 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="同学蹭饭地图">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
+    <style>
+        .pwa-install-panel {
+            position: fixed;
+            left: max(12px, env(safe-area-inset-left));
+            right: max(12px, env(safe-area-inset-right));
+            bottom: max(12px, env(safe-area-inset-bottom));
+            z-index: 2200;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            color: #172033;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(28, 40, 58, 0.13);
+            border-radius: 8px;
+            box-shadow: 0 10px 28px rgba(21, 35, 53, 0.18);
+            backdrop-filter: blur(10px);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .pwa-install-panel.is-visible {
+            display: flex;
+        }
+
+        .pwa-install-panel__copy {
+            flex: 1 1 auto;
+            min-width: 0;
+            line-height: 1.35;
+        }
+
+        .pwa-install-panel__title {
+            display: block;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .pwa-install-panel__note {
+            display: block;
+            margin-top: 2px;
+            font-size: 12px;
+            color: #536072;
+        }
+
+        .pwa-install-panel__actions {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 6px;
+        }
+
+        .pwa-install-panel button {
+            min-height: 34px;
+            border: 0;
+            border-radius: 7px;
+            padding: 0 10px;
+            color: #fff;
+            background: #1976d2;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .pwa-install-panel button.secondary {
+            color: #1f2a3a;
+            background: #edf2f7;
+        }
+
+        .pwa-install-panel button.close {
+            width: 34px;
+            padding: 0;
+            color: #536072;
+            background: transparent;
+            font-size: 22px;
+            line-height: 1;
+        }
+
+        @media (min-width: 720px) {
+            .pwa-install-panel {
+                left: auto;
+                width: 390px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .pwa-install-panel {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .pwa-install-panel__actions {
+                display: grid;
+                grid-template-columns: 1fr 1fr 34px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="map-title" id="mapTitle">同学蹭饭地图</div>
@@ -1160,12 +1253,112 @@
             initMap();
         });
     </script>
+    <div id="pwaInstallPanel" class="pwa-install-panel" role="dialog" aria-live="polite" aria-label="全屏打开">
+        <span class="pwa-install-panel__copy">
+            <strong class="pwa-install-panel__title">全屏打开</strong>
+            <span class="pwa-install-panel__note" id="pwaInstallNote">装到桌面后，从图标进入就是应用模式。</span>
+        </span>
+        <span class="pwa-install-panel__actions">
+            <button type="button" id="pwaInstallBtn">安装</button>
+            <button type="button" id="pwaFullscreenBtn" class="secondary">全屏</button>
+            <button type="button" id="pwaDismissBtn" class="close" aria-label="关闭">×</button>
+        </span>
+    </div>
     <script>
         if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('./sw.js').catch(function() {});
             });
         }
+
+        (function() {
+            var panel = document.getElementById('pwaInstallPanel');
+            var installBtn = document.getElementById('pwaInstallBtn');
+            var fullscreenBtn = document.getElementById('pwaFullscreenBtn');
+            var dismissBtn = document.getElementById('pwaDismissBtn');
+            var note = document.getElementById('pwaInstallNote');
+            var deferredInstallPrompt = null;
+            var dismissedKey = 'classmapper-pwa-install-dismissed';
+            var isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            var isAndroid = /Android/i.test(navigator.userAgent);
+
+            function isAppMode() {
+                return window.matchMedia('(display-mode: fullscreen)').matches ||
+                    window.matchMedia('(display-mode: standalone)').matches ||
+                    window.navigator.standalone === true;
+            }
+
+            function canRequestFullscreen() {
+                var root = document.documentElement;
+                return !!(root.requestFullscreen || root.webkitRequestFullscreen);
+            }
+
+            function updatePanel() {
+                if (!panel || isAppMode() || sessionStorage.getItem(dismissedKey) === '1') {
+                    return;
+                }
+                if (!isAndroid && !isiOS && !deferredInstallPrompt) {
+                    return;
+                }
+
+                if (isiOS && !deferredInstallPrompt) {
+                    note.textContent = '在 Safari 里点分享，再选“添加到主屏幕”。';
+                    installBtn.textContent = '知道了';
+                } else if (!deferredInstallPrompt) {
+                    installBtn.style.display = 'none';
+                }
+                if (!canRequestFullscreen()) {
+                    fullscreenBtn.style.display = 'none';
+                }
+                panel.classList.add('is-visible');
+            }
+
+            window.addEventListener('beforeinstallprompt', function(event) {
+                event.preventDefault();
+                deferredInstallPrompt = event;
+                updatePanel();
+            });
+
+            if (installBtn) {
+                installBtn.addEventListener('click', function() {
+                    if (deferredInstallPrompt) {
+                        deferredInstallPrompt.prompt();
+                        deferredInstallPrompt.userChoice.finally(function() {
+                            deferredInstallPrompt = null;
+                            panel.classList.remove('is-visible');
+                        });
+                    } else {
+                        sessionStorage.setItem(dismissedKey, '1');
+                        panel.classList.remove('is-visible');
+                    }
+                });
+            }
+
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', function() {
+                    var root = document.documentElement;
+                    var request = root.requestFullscreen || root.webkitRequestFullscreen;
+                    if (request) {
+                        try {
+                            var result = request.call(root);
+                            if (result && result.catch) {
+                                result.catch(function() {});
+                            }
+                        } catch (error) {}
+                    }
+                    panel.classList.remove('is-visible');
+                });
+            }
+
+            if (dismissBtn) {
+                dismissBtn.addEventListener('click', function() {
+                    sessionStorage.setItem(dismissedKey, '1');
+                    panel.classList.remove('is-visible');
+                });
+            }
+
+            setTimeout(updatePanel, 900);
+        })();
     </script>
 </body>
 </html>
