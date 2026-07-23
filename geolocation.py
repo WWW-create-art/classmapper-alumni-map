@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from geopy.geocoders import Nominatim
 
 
@@ -74,6 +75,11 @@ KNOWN_LOCATIONS = {
         "coords": [23.0962, 113.2988],
         "address": "中山大学，广州市",
     },
+    "华南理工大学": {
+        "city": "广州市",
+        "coords": [23.160342, 113.3372426],
+        "address": "华南理工大学，广州市",
+    },
     "浙江警察学院": {
         "city": "杭州市",
         "coords": [30.1510, 120.0909],
@@ -89,15 +95,15 @@ KNOWN_LOCATIONS = {
 
 def get_school_location(school_name, cache):
     """获取学校地理位置（使用缓存机制）"""
-    # 检查缓存
-    if school_name in cache:
-        return cache[school_name]
-
     if school_name in KNOWN_LOCATIONS:
         result = KNOWN_LOCATIONS[school_name]
         cache[school_name] = result
         print(f"✅ 使用内置定位: {school_name} -> {result['address']}")
         return result
+
+    # 检查缓存
+    if school_name in cache:
+        return cache[school_name]
     
     # 使用OpenStreetMap API
     geolocator = Nominatim(user_agent="cengfan_map_app")
@@ -123,32 +129,8 @@ def get_school_location(school_name, cache):
             continue
     
     if location:
-        # 尝试从地址中提取城市信息
-        address = location.address
-        # 使用更精确的地址提取方法
-        if '市' in address:
-            parts = address.split('市')
-            city = parts[0] + '市'
-            # 尝试获取更精确的位置描述
-            if len(parts) > 1 and parts[1].strip():
-                address = parts[1].strip().split(',')[0] + ', ' + city
-            else:
-                address = city
-        elif '区' in address:
-            parts = address.split('区')
-            city = parts[0] + '区'
-            address = city
-        elif '县' in address:
-            parts = address.split('县')
-            city = parts[0] + '县'
-            address = city
-        else:
-            # 尝试提取更大的行政区划
-            parts = address.split(',')
-            if len(parts) > 2:
-                city = parts[-3].strip()
-                address = city
-        
+        city = extract_city_name(location.address)
+        address = format_school_address(school_name, city)
         coords = (location.latitude, location.longitude)
         print(f"✅ 定位成功: {school_name} -> {address}")
     else:
@@ -159,6 +141,27 @@ def get_school_location(school_name, cache):
     result = {"city": city, "coords": coords, "address": address}
     cache[school_name] = result
     return result
+
+
+def extract_city_name(address):
+    """从定位服务返回的长地址中提取城市，避免把街道和校区写进地图。"""
+    text = str(address or "")
+    parts = [part.strip(" ,，") for part in re.split(r"[,，]", text) if part.strip(" ,，")]
+    for part in reversed(parts):
+        match = re.search(r"([\u4e00-\u9fff]{2,12}(?:市|自治州|地区|盟))$", part)
+        if match:
+            return match.group(1)
+
+    match = re.search(r"([\u4e00-\u9fff]{2,12}市)", text)
+    if match:
+        return match.group(1)
+    return "未知"
+
+
+def format_school_address(school_name, city):
+    if city and city != "未知":
+        return f"{school_name}，{city}"
+    return school_name
 
 def load_cache(cache_path):
     """加载位置缓存"""

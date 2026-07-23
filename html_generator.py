@@ -915,7 +915,7 @@ HTML_TEMPLATE = r"""
 
         function getPrivateStudentName(name, forceMasked) {
             const text = String(name || '').trim();
-            if (!forceMasked && canShowFullNames()) {
+            if (forceMasked !== true && canShowFullNames()) {
                 return text;
             }
             if (!text) {
@@ -935,7 +935,7 @@ HTML_TEMPLATE = r"""
         }
 
         function getPrivateStudentList(students, separator) {
-            return students.map(getPrivateStudentName).join(separator);
+            return students.map((name) => getPrivateStudentName(name)).join(separator);
         }
 
         function getPrivacyHintHtml() {
